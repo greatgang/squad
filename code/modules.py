@@ -14,6 +14,10 @@
 
 """This file contains some basic model components"""
 
+import argparse
+import sys
+
+import numpy as np
 import tensorflow as tf
 from tensorflow.python.ops.rnn_cell import DropoutWrapper
 from tensorflow.python.ops import variable_scope as vs
@@ -176,6 +180,65 @@ class BasicAttn(object):
             return attn_dist, output
 
 
+class SelfAttn(object):
+    """
+    Module for self attention.
+    """
+
+    def __init__(self, keep_prob, value_vec_size):
+        """
+        Inputs:
+          keep_prob: tensor containing a single scalar that is the keep probability (for dropout)
+          value_vec_size: size of the value vectors. int
+        """
+        self.keep_prob = keep_prob
+        self.value_vec_size = value_vec_size
+
+    def build_graph(self, values, values_mask):
+        """
+        Keys attend to values.
+        For each key, return an attention distribution and an attention output vector.
+
+        Inputs:
+          values: Tensor shape (batch_size, num_values, value_vec_size).
+          values_mask: Tensor shape (batch_size, num_values).
+            1s where there's real input, 0s where there's padding
+          keys: Tensor shape (batch_size, num_keys, value_vec_size)
+
+        Outputs:
+          attn_dist: Tensor shape (batch_size, num_keys, num_values).
+            For each key, the distribution should sum to 1,
+            and should be 0 in the value locations that correspond to padding.
+          output: Tensor shape (batch_size, num_keys, hidden_size).
+            This is the attention output; the weighted sum of the values
+            (using the attention distribution as weights).
+        """
+        with vs.variable_scope("SelfAttn"):
+
+            # source_sequence_length = tf.reduce_sum(values_mask, reduction_indices = 1)
+            v1 = tf.layers.dense(values, self.value_vec_size, use_bias=False)
+            v2 = tf.layers.dense(values, self.value_vec_size, use_bias=False)
+
+            v = tf.get_variable("v_attention", shape=[self.value_vec_size], 
+                initializer=tf.contrib.layers.xavier_initializer())
+
+            reshaped_v1 = tf.expand_dims(v1, 1)
+            reshaped_v2 = tf.expand_dims(v2, 2)
+
+            self_attn_logits = tf.reduce_sum(v * tf.tanh(reshaped_v1 + reshaped_v2), 3)
+
+            self_attn_logits_mask = tf.expand_dims(values_mask, 1) # (batch_size, 1, num_values)
+            _, self_attn_dist = masked_softmax(self_attn_logits, self_attn_logits_mask, 2) # (batch_size, num_values, num_values)
+
+            # Use attention distribution to take weighted sum of values
+            output = tf.matmul(self_attn_dist, values) # shape (batch_size, num_values, value_vec_size)
+
+            # Apply dropout
+            # output = tf.nn.dropout(output, self.keep_prob)
+
+            return self_attn_dist, output
+
+
 def masked_softmax(logits, mask, dim):
     """
     Takes masked softmax over given dimension of logits.
@@ -199,3 +262,67 @@ def masked_softmax(logits, mask, dim):
     masked_logits = tf.add(logits, exp_mask) # where there's padding, set logits to -large
     prob_dist = tf.nn.softmax(masked_logits, dim)
     return masked_logits, prob_dist
+
+def test_self_attn_layer():
+    with tf.Graph().as_default():
+        with tf.variable_scope("test_self_attn_layer"):
+            # key_placeholder is shape (batch_size, context_len, hidden_size*2)
+            value_placeholder = tf.placeholder(tf.float32, shape=[1, 3, 2])
+            value_mask_placeholder = tf.placeholder(tf.float32, shape=[1, 3])
+
+            """
+            with tf.variable_scope("rnn"):
+                tf.get_variable("W_x", initializer=np.array(np.eye(3,2), dtype=np.float32))
+                tf.get_variable("W_h", initializer=np.array(np.eye(2,2), dtype=np.float32))
+                tf.get_variable("b",  initializer=np.array(np.ones(2), dtype=np.float32))
+            """
+
+            #tf.get_variable_scope().reuse_variables()
+            self_attn_layer = SelfAttn(1, 2)
+            dist, self_attn_output = self_attn_layer.build_graph(value_placeholder, value_mask_placeholder) 
+            #print self_attn_output.get_shape()
+            print np.shape(dist)
+            print np.shape(self_attn_output)
+
+            """
+            init = tf.global_variables_initializer()
+            with tf.Session() as session:
+                session.run(init)
+                x = np.array([
+                    [0.4, 0.5, 0.6],
+                    [0.3, -0.2, -0.1]], dtype=np.float32)
+                h = np.array([
+                    [0.2, 0.5],
+                    [-0.3, -0.3]], dtype=np.float32)
+                y = np.array([
+                    [0.832, 0.881],
+                    [0.731, 0.622]], dtype=np.float32)
+                ht = y
+
+                y_, ht_ = session.run([y_var, ht_var], feed_dict={x_placeholder: x, h_placeholder: h})
+                print("y_ = " + str(y_))
+                print("ht_ = " + str(ht_))
+
+                assert np.allclose(y_, ht_), "output and state should be equal."
+                assert np.allclose(ht, ht_, atol=1e-2), "new state vector does not seem to be correct."
+            """
+
+def do_test(_):
+    print "Testing starts:"
+    test_self_attn_layer()
+    print "Passed!"
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description='Tests modules')
+    subparsers = parser.add_subparsers()
+
+    command_parser = subparsers.add_parser('test', help='')
+    command_parser.set_defaults(func=do_test)
+
+    ARGS = parser.parse_args()
+    if ARGS.func is None:
+        parser.print_help()
+        sys.exit(1)
+    else:
+        ARGS.func(ARGS)
+
