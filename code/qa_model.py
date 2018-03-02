@@ -30,7 +30,7 @@ from tensorflow.python.ops import embedding_ops
 from evaluate import exact_match_score, f1_score
 from data_batcher import get_batch_generator
 from pretty_print import print_example
-from modules import RNNEncoder, SimpleSoftmaxLayer, BasicAttn, SelfAttn
+from modules import RNNEncoder, SimpleSoftmaxLayer, BasicAttn, SelfAttn, DotAttn
 
 logging.basicConfig(level=logging.INFO)
 
@@ -139,10 +139,14 @@ class QAModel(object):
         _, basic_attn_output = basic_attn_layer.build_graph(question_hiddens, self.qn_mask, context_hiddens) # attn_output is shape (batch_size, context_len, hidden_size*2)
 
         # Gang: adding self attention (R-NET)
-        self_attn_layer = SelfAttn(self.keep_prob, self.FLAGS.hidden_size*2)
-        _, self_attn_output = self_attn_layer.build_graph(basic_attn_output, self.context_mask) # self_attn_output is shape (batch_size, context_len, hidden_size*2)
+        # self_attn_layer = SelfAttn(self.keep_prob, self.FLAGS.hidden_size*2)
+        # _, self_attn_output = self_attn_layer.build_graph(basic_attn_output, self.context_mask) # self_attn_output is shape (batch_size, context_len, hidden_size*2)
 
-        attn_output = self_attn_output
+        # Gang: adding dot attention (Attention Is All You Need)
+        dot_attn_layer = DotAttn(self.keep_prob, self.FLAGS.hidden_size*2)
+        _, dot_attn_output = dot_attn_layer.build_graph(basic_attn_output, self.context_mask) # self_attn_output is shape (batch_size, context_len, hidden_size*2)
+
+        attn_output = dot_attn_output
 
         # Concat attn_output to context_hiddens to get blended_reps
         blended_reps = tf.concat([context_hiddens, attn_output], axis=2) # (batch_size, context_len, hidden_size*4)

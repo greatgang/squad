@@ -239,6 +239,59 @@ class SelfAttn(object):
             return self_attn_dist, output
 
 
+class DotAttn(object):
+    """
+    Module for self attention.
+    """
+
+    def __init__(self, keep_prob, value_vec_size):
+        """
+        Inputs:
+          keep_prob: tensor containing a single scalar that is the keep probability (for dropout)
+          value_vec_size: size of the value vectors. int
+        """
+        self.keep_prob = keep_prob
+        self.value_vec_size = value_vec_size
+
+    def build_graph(self, values, values_mask):
+        """
+        Keys attend to values.
+        For each key, return an attention distribution and an attention output vector.
+
+        Inputs:
+          values: Tensor shape (batch_size, num_values, value_vec_size).
+          values_mask: Tensor shape (batch_size, num_values).
+            1s where there's real input, 0s where there's padding
+          keys: Tensor shape (batch_size, num_keys, value_vec_size)
+
+        Outputs:
+          attn_dist: Tensor shape (batch_size, num_keys, num_values).
+            For each key, the distribution should sum to 1,
+            and should be 0 in the value locations that correspond to padding.
+          output: Tensor shape (batch_size, num_keys, hidden_size).
+            This is the attention output; the weighted sum of the values
+            (using the attention distribution as weights).
+        """
+        with vs.variable_scope("DotAttn"):
+
+            v1 = tf.layers.dense(values, self.value_vec_size, activation=tf.nn.relu, use_bias=False)
+            v2 = tf.layers.dense(values, self.value_vec_size, activation=tf.nn.relu, use_bias=False)
+
+            self_attn_logits = tf.matmul(v1, 
+                               tf.transpose(v2, [0, 2, 1]) / np.sqrt(self.value_vec_size))
+
+            self_attn_logits_mask = tf.expand_dims(values_mask, 1) # (batch_size, 1, num_values)
+            _, self_attn_dist = masked_softmax(self_attn_logits, self_attn_logits_mask, 2) # (batch_size, num_values, num_values)
+
+            # Use attention distribution to take weighted sum of values
+            output = tf.matmul(self_attn_dist, values) # shape (batch_size, num_values, value_vec_size)
+
+            # Apply dropout
+            # output = tf.nn.dropout(output, self.keep_prob)
+
+            return self_attn_dist, output
+
+
 def masked_softmax(logits, mask, dim):
     """
     Takes masked softmax over given dimension of logits.
@@ -281,8 +334,8 @@ def test_self_attn_layer():
             self_attn_layer = SelfAttn(1, 2)
             dist, self_attn_output = self_attn_layer.build_graph(value_placeholder, value_mask_placeholder) 
             #print self_attn_output.get_shape()
-            print np.shape(dist)
-            print np.shape(self_attn_output)
+            print "self attn distribution shape = " + str(np.shape(dist))
+            print "self attn output shape = " + str(np.shape(self_attn_output))
 
             """
             init = tf.global_variables_initializer()
@@ -307,9 +360,32 @@ def test_self_attn_layer():
                 assert np.allclose(ht, ht_, atol=1e-2), "new state vector does not seem to be correct."
             """
 
+def test_dot_attn_layer():
+    with tf.Graph().as_default():
+        with tf.variable_scope("test_dot_attn_layer"):
+            # key_placeholder is shape (batch_size, context_len, hidden_size*2)
+            value_placeholder = tf.placeholder(tf.float32, shape=[1, 3, 2])
+            value_mask_placeholder = tf.placeholder(tf.float32, shape=[1, 3])
+
+            """
+            with tf.variable_scope("rnn"):
+                tf.get_variable("W_x", initializer=np.array(np.eye(3,2), dtype=np.float32))
+                tf.get_variable("W_h", initializer=np.array(np.eye(2,2), dtype=np.float32))
+                tf.get_variable("b",  initializer=np.array(np.ones(2), dtype=np.float32))
+            """
+
+            #tf.get_variable_scope().reuse_variables()
+            dot_attn_layer = DotAttn(1, 2)
+            dist, dot_attn_output = dot_attn_layer.build_graph(value_placeholder, value_mask_placeholder) 
+            #print self_attn_output.get_shape()
+            print "dot attn distribution shape = " + str(np.shape(dist))
+            print "dot attn output shape = " + str(np.shape(dot_attn_output))
+
+
 def do_test(_):
     print "Testing starts:"
     test_self_attn_layer()
+    test_dot_attn_layer()
     print "Passed!"
 
 if __name__ == "__main__":
