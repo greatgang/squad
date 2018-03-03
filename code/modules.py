@@ -274,11 +274,14 @@ class DotAttn(object):
         """
         with vs.variable_scope("DotAttn"):
 
-            v1 = tf.layers.dense(values, self.value_vec_size, activation=tf.nn.relu, use_bias=False)
-            v2 = tf.layers.dense(values, self.value_vec_size, activation=tf.nn.relu, use_bias=False)
+            #v1 = tf.layers.dense(values, self.value_vec_size, activation=tf.nn.relu, use_bias=False, name="W1")
+            #v2 = tf.layers.dense(values, self.value_vec_size, activation=tf.nn.relu, use_bias=False, name="W2")
+            v1 = tf.layers.dense(values, self.value_vec_size, use_bias=False, name="W1")
+            v2 = tf.layers.dense(values, self.value_vec_size, use_bias=False, name="W2")
 
-            self_attn_logits = tf.matmul(v1, 
-                               tf.transpose(v2, [0, 2, 1]) / np.sqrt(self.value_vec_size))
+            #self_attn_logits = tf.matmul(v1, 
+            #                   tf.transpose(v2, [0, 2, 1]) / np.sqrt(self.value_vec_size))
+            self_attn_logits = tf.matmul(v1, tf.transpose(v2, [0, 2, 1]))
 
             self_attn_logits_mask = tf.expand_dims(values_mask, 1) # (batch_size, 1, num_values)
             _, self_attn_dist = masked_softmax(self_attn_logits, self_attn_logits_mask, 2) # (batch_size, num_values, num_values)
@@ -287,7 +290,7 @@ class DotAttn(object):
             output = tf.matmul(self_attn_dist, values) # shape (batch_size, num_values, value_vec_size)
 
             # Apply dropout
-            # output = tf.nn.dropout(output, self.keep_prob)
+            output = tf.nn.dropout(output, self.keep_prob)
 
             return self_attn_dist, output
 
@@ -361,25 +364,54 @@ def test_self_attn_layer():
             """
 
 def test_dot_attn_layer():
+    print "Test dot attention layer:"
     with tf.Graph().as_default():
         with tf.variable_scope("test_dot_attn_layer"):
-            # key_placeholder is shape (batch_size, context_len, hidden_size*2)
-            value_placeholder = tf.placeholder(tf.float32, shape=[1, 3, 2])
-            value_mask_placeholder = tf.placeholder(tf.float32, shape=[1, 3])
+            value_placeholder = tf.placeholder(tf.float32, shape=[None, 3, 2]) # (batch_size, context_len, hidden_size*2)
+            value_mask_placeholder = tf.placeholder(tf.float32, shape=[None, 3])
 
-            """
-            with tf.variable_scope("rnn"):
-                tf.get_variable("W_x", initializer=np.array(np.eye(3,2), dtype=np.float32))
-                tf.get_variable("W_h", initializer=np.array(np.eye(2,2), dtype=np.float32))
-                tf.get_variable("b",  initializer=np.array(np.ones(2), dtype=np.float32))
-            """
+            with tf.variable_scope("DotAttn"):
+                tf.get_variable("W1/kernel", initializer=np.array(np.eye(2,2), dtype=np.float32))
+                tf.get_variable("W2/kernel", initializer=np.array(np.eye(2,2), dtype=np.float32))
 
-            #tf.get_variable_scope().reuse_variables()
-            dot_attn_layer = DotAttn(1, 2)
+            tf.get_variable_scope().reuse_variables()
+            dot_attn_layer = DotAttn(1, 2) # (keep_prob, context_len)
+
             dist, dot_attn_output = dot_attn_layer.build_graph(value_placeholder, value_mask_placeholder) 
-            #print self_attn_output.get_shape()
+            print "Trainable variables: "
+            print tf.trainable_variables()
             print "dot attn distribution shape = " + str(np.shape(dist))
             print "dot attn output shape = " + str(np.shape(dot_attn_output))
+
+            init = tf.global_variables_initializer()
+            with tf.Session() as session:
+                session.run(init)
+                v = np.array([
+                    [[0.4,  0.5], # batch 0
+                     [0.3, -0.2],
+                     [0.6, -0.1]],
+                    [[4, -5],     # batch 1
+                     [8,  2],
+                     [9, -1]]
+                    ], dtype=np.float32)
+                m = np.array([[1, 1, 0], # batch 0
+                              [1, 0, 0]  # batch 1
+                             ], dtype=np.float32)
+                dist_, attn_ = session.run([dist, dot_attn_output], 
+                               feed_dict={value_placeholder: v, value_mask_placeholder: m})
+                print("\ndist_ = ")
+                print dist_
+                print("\nattn_ = ")
+                print attn_
+                expected_attn_ = np.array([
+                    [[0.35962827, 0.21739789],  # batch 0
+                     [0.34725277, 0.13076939],
+                     [0.34975   , 0.14825001]],
+                    [[4, -5],                   # batch 1
+                     [4, -5],
+                     [4, -5]]
+                    ], dtype=np.float32)
+                assert np.allclose(attn_, expected_attn_, atol=1e-2), "attention not correct"
 
 
 def do_test(_):
