@@ -244,7 +244,7 @@ class DotAttn(object):
     Module for self attention.
     """
 
-    def __init__(self, keep_prob, value_vec_size):
+    def __init__(self, keep_prob, value_vec_size, advanced_dot_attn):
         """
         Inputs:
           keep_prob: tensor containing a single scalar that is the keep probability (for dropout)
@@ -252,6 +252,7 @@ class DotAttn(object):
         """
         self.keep_prob = keep_prob
         self.value_vec_size = value_vec_size
+        self.advanced_dot_attn = advanced_dot_attn
 
     def build_graph(self, values, values_mask):
         """
@@ -274,14 +275,18 @@ class DotAttn(object):
         """
         with vs.variable_scope("DotAttn"):
 
-            #v1 = tf.layers.dense(values, self.value_vec_size, activation=tf.nn.relu, use_bias=False, name="W1")
-            #v2 = tf.layers.dense(values, self.value_vec_size, activation=tf.nn.relu, use_bias=False, name="W2")
-            v1 = tf.layers.dense(values, self.value_vec_size, use_bias=False, name="W1")
-            v2 = tf.layers.dense(values, self.value_vec_size, use_bias=False, name="W2")
+            if self.advanced_dot_attn:
+                v1 = tf.layers.dense(values, self.value_vec_size, activation=tf.nn.relu, use_bias=False, name="W1")
+                v2 = tf.layers.dense(values, self.value_vec_size, activation=tf.nn.relu, use_bias=False, name="W2")
+            else:
+                v1 = tf.layers.dense(values, self.value_vec_size, use_bias=False, name="W1")
+                v2 = tf.layers.dense(values, self.value_vec_size, use_bias=False, name="W2")
 
-            #self_attn_logits = tf.matmul(v1, 
-            #                   tf.transpose(v2, [0, 2, 1]) / np.sqrt(self.value_vec_size))
-            self_attn_logits = tf.matmul(v1, tf.transpose(v2, [0, 2, 1]))
+            if self.advanced_dot_attn:
+                self_attn_logits = tf.matmul(v1, 
+                                   tf.transpose(v2, [0, 2, 1]) / np.sqrt(self.value_vec_size))
+            else:
+                self_attn_logits = tf.matmul(v1, tf.transpose(v2, [0, 2, 1]))
 
             self_attn_logits_mask = tf.expand_dims(values_mask, 1) # (batch_size, 1, num_values)
             _, self_attn_dist = masked_softmax(self_attn_logits, self_attn_logits_mask, 2) # (batch_size, num_values, num_values)
@@ -340,29 +345,6 @@ def test_self_attn_layer():
             print "self attn distribution shape = " + str(np.shape(dist))
             print "self attn output shape = " + str(np.shape(self_attn_output))
 
-            """
-            init = tf.global_variables_initializer()
-            with tf.Session() as session:
-                session.run(init)
-                x = np.array([
-                    [0.4, 0.5, 0.6],
-                    [0.3, -0.2, -0.1]], dtype=np.float32)
-                h = np.array([
-                    [0.2, 0.5],
-                    [-0.3, -0.3]], dtype=np.float32)
-                y = np.array([
-                    [0.832, 0.881],
-                    [0.731, 0.622]], dtype=np.float32)
-                ht = y
-
-                y_, ht_ = session.run([y_var, ht_var], feed_dict={x_placeholder: x, h_placeholder: h})
-                print("y_ = " + str(y_))
-                print("ht_ = " + str(ht_))
-
-                assert np.allclose(y_, ht_), "output and state should be equal."
-                assert np.allclose(ht, ht_, atol=1e-2), "new state vector does not seem to be correct."
-            """
-
 def test_dot_attn_layer():
     print "Test dot attention layer:"
     with tf.Graph().as_default():
@@ -375,7 +357,7 @@ def test_dot_attn_layer():
                 tf.get_variable("W2/kernel", initializer=np.array(np.eye(2,2), dtype=np.float32))
 
             tf.get_variable_scope().reuse_variables()
-            dot_attn_layer = DotAttn(1, 2) # (keep_prob, context_len)
+            dot_attn_layer = DotAttn(1, 2, False) # (keep_prob, context_len, advanced_dot_attn)
 
             dist, dot_attn_output = dot_attn_layer.build_graph(value_placeholder, value_mask_placeholder) 
             print "Trainable variables: "

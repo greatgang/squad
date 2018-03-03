@@ -143,7 +143,7 @@ class QAModel(object):
         # _, self_attn_output = self_attn_layer.build_graph(basic_attn_output, self.context_mask) # self_attn_output is shape (batch_size, context_len, hidden_size*2)
 
         # Gang: adding dot attention (Attention Is All You Need)
-        dot_attn_layer = DotAttn(self.keep_prob, self.FLAGS.hidden_size*2)
+        dot_attn_layer = DotAttn(self.keep_prob, self.FLAGS.hidden_size*2, self.FLAGS.advanced_dot_attn)
         _, dot_attn_output = dot_attn_layer.build_graph(basic_attn_output, self.context_mask) # self_attn_output is shape (batch_size, context_len, hidden_size*2)
 
         attn_output = dot_attn_output
