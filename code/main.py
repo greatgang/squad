@@ -54,6 +54,7 @@ tf.app.flags.DEFINE_integer("question_len", 30, "The maximum question length of 
 tf.app.flags.DEFINE_integer("embedding_size", 100, "Size of the pretrained word vectors. This needs to be one of the available GloVe dimensions: 50/100/200/300")
 
 # Gang: my parameters
+tf.app.flags.DEFINE_integer("advanced_basic_attn", True, "Turn on advanced version of basic attention")
 tf.app.flags.DEFINE_integer("advanced_dot_attn", True, "Turn on advanced version of dot attention")
 tf.app.flags.DEFINE_integer("gated_reps", False, "Turn on gated representation")
 

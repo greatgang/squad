@@ -143,6 +143,7 @@ class BasicAttn(object):
         self.keep_prob = keep_prob
         self.key_vec_size = key_vec_size
         self.value_vec_size = value_vec_size
+        self.advanced_basic_attn = advanced_basic_attn
 
     def build_graph(self, values, values_mask, keys):
         """
@@ -165,9 +166,21 @@ class BasicAttn(object):
         """
         with vs.variable_scope("BasicAttn"):
 
+            if self.advanced_basic_attn:
+                k = tf.layers.dense(values, self.key_vec_size, activation=tf.nn.relu, use_bias=False, name="Wk")
+                v = tf.layers.dense(values, self.value_vec_size, activation=tf.nn.relu, use_bias=False, name="Wv")
+            else:
+                k = keys
+                v = values
+
             # Calculate attention distribution
-            values_t = tf.transpose(values, perm=[0, 2, 1]) # (batch_size, value_vec_size, num_values)
-            attn_logits = tf.matmul(keys, values_t) # shape (batch_size, num_keys, num_values)
+            values_t = tf.transpose(v, perm=[0, 2, 1]) # (batch_size, value_vec_size, num_values)
+
+            if self.advanced_basic_attn:
+                attn_logits = tf.matmul(k, values_t / np.sqrt(self.value_vec_size))
+            else:
+                attn_logits = tf.matmul(k, values_t) # shape (batch_size, num_keys, num_values)
+
             attn_logits_mask = tf.expand_dims(values_mask, 1) # shape (batch_size, 1, num_values)
             _, attn_dist = masked_softmax(attn_logits, attn_logits_mask, 2) # shape (batch_size, num_keys, num_values). take softmax over values
 
