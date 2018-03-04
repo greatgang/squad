@@ -138,19 +138,22 @@ class QAModel(object):
         basic_attn_layer = BasicAttn(self.keep_prob, self.FLAGS.hidden_size*2, self.FLAGS.hidden_size*2)
         _, basic_attn_output = basic_attn_layer.build_graph(question_hiddens, self.qn_mask, context_hiddens) # attn_output is shape (batch_size, context_len, hidden_size*2)
 
+        # Concat basic_attn_output to context_hiddens to get blended_reps0
+        blended_reps0 = tf.concat([context_hiddens, basic_attn_output], axis=2) # (batch_size, context_len, hidden_size*4)
+        
         # Gang: adding self attention (R-NET)
-        # self_attn_layer = SelfAttn(self.keep_prob, self.FLAGS.hidden_size*2)
-        # _, self_attn_output = self_attn_layer.build_graph(basic_attn_output, self.context_mask) # self_attn_output is shape (batch_size, context_len, hidden_size*2)
+        # self_attn_layer = SelfAttn(self.keep_prob, self.FLAGS.hidden_size*4)
+        # # (batch_size, context_len, hidden_size*4)
+        # _, self_attn_output = self_attn_layer.build_graph(basic_attn_output, self.context_mask) 
 
         # Gang: adding dot attention (Attention Is All You Need)
-        dot_attn_layer = DotAttn(self.keep_prob, self.FLAGS.hidden_size*2, self.FLAGS.advanced_dot_attn)
-        _, dot_attn_output = dot_attn_layer.build_graph(basic_attn_output, self.context_mask) # self_attn_output is shape (batch_size, context_len, hidden_size*2)
-
-        attn_output = dot_attn_output
-
-        # Concat attn_output to context_hiddens to get blended_reps
-        blended_reps = tf.concat([context_hiddens, attn_output], axis=2) # (batch_size, context_len, hidden_size*4)
+        dot_attn_layer = DotAttn(self.keep_prob, self.FLAGS.hidden_size*4, self.FLAGS.advanced_dot_attn)
+        # # (batch_size, context_len, hidden_size*4)
+        _, dot_attn_output = dot_attn_layer.build_graph(blended_reps0, self.context_mask) 
         
+        # Concat dot_attn_output to blended_reps0 to get blended_reps1
+        blended_reps1 = tf.concat([blended_reps0, dot_attn_output], axis=2) # (batch_size, context_len, hidden_size*8)
+
         # Gang: adding gated representation (R-NET)
         """
         if self.FLAGS.gated_reps:
@@ -164,7 +167,7 @@ class QAModel(object):
         # Note, blended_reps_final corresponds to b' in the handout
         # Note, tf.contrib.layers.fully_connected applies a ReLU non-linarity here by default
         # blended_reps_final is shape (batch_size, context_len, hidden_size)
-        blended_reps_final = tf.contrib.layers.fully_connected(blended_reps, num_outputs=self.FLAGS.hidden_size) 
+        blended_reps_final = tf.contrib.layers.fully_connected(blended_reps1, num_outputs=self.FLAGS.hidden_size) 
 
         # Use softmax layer to compute probability distribution for start location
         # Note this produces self.logits_start and self.probdist_start, both of which have shape (batch_size, context_len)
