@@ -176,7 +176,7 @@ class BasicAttn(object):
     module with other inputs.
     """
 
-    def __init__(self, keep_prob, key_vec_size, value_vec_size):
+    def __init__(self, keep_prob, key_vec_size, value_vec_size, advanced_basic_attn):
         """
         Inputs:
           keep_prob: tensor containing a single scalar that is the keep probability (for dropout)
@@ -210,7 +210,7 @@ class BasicAttn(object):
         with vs.variable_scope("BasicAttn"):
 
             if self.advanced_basic_attn:
-                k = tf.layers.dense(values, self.key_vec_size, activation=tf.nn.relu, use_bias=False, name="Wk")
+                k = tf.layers.dense(keys, self.key_vec_size, activation=tf.nn.relu, use_bias=False, name="Wk")
                 v = tf.layers.dense(values, self.value_vec_size, activation=tf.nn.relu, use_bias=False, name="Wv")
             else:
                 k = keys
