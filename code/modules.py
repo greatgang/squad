@@ -241,7 +241,7 @@ class SelfAttn(object):
 
 class DotAttn(object):
     """
-    Module for self attention.
+    Module for dot attention.
     """
 
     def __init__(self, keep_prob, value_vec_size, advanced_dot_attn):
@@ -298,6 +298,34 @@ class DotAttn(object):
             output = tf.nn.dropout(output, self.keep_prob)
 
             return self_attn_dist, output
+
+
+class GatedReps(object):
+    """
+    Module for gated representation.
+    """
+
+    def __init__(self, value_vec_size):
+        """
+        Inputs:
+          value_vec_size: size of the value vectors. int
+        """
+        self.value_vec_size = value_vec_size
+
+    def build_graph(self, values):
+
+        with vs.variable_scope("GatedReps"):
+
+            """
+            #Wg = tf.get_variable("Wg", shape=[self.value_vec_size], 
+            #     initializer=tf.contrib.layers.xavier_initializer())
+
+            gate = tf.sigmoid(tf.matmul(Wg, values)) # (batch_size, num_values)
+
+            output = gate * values # (batch_size, num_values, value_vec_size)
+
+            return output
+            """
 
 
 def masked_softmax(logits, mask, dim):

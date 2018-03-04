@@ -55,6 +55,7 @@ tf.app.flags.DEFINE_integer("embedding_size", 100, "Size of the pretrained word 
 
 # Gang: my parameters
 tf.app.flags.DEFINE_integer("advanced_dot_attn", True, "Turn on advanced version of dot attention")
+tf.app.flags.DEFINE_integer("gated_reps", False, "Turn on gated representation")
 
 # How often to print, save, eval
 tf.app.flags.DEFINE_integer("print_every", 1, "How many iterations to do per print.")
