@@ -30,7 +30,7 @@ from tensorflow.python.ops import embedding_ops
 from evaluate import exact_match_score, f1_score
 from data_batcher import get_batch_generator
 from pretty_print import print_example
-from modules import (RNNEncoder, SimpleSoftmaxLayer, 
+from modules import (RNNEncoder, RNNDecoder, SimpleSoftmaxLayer, 
                      BasicAttn, SelfAttn, DotAttn, GatedReps)
 
 logging.basicConfig(level=logging.INFO)
@@ -163,11 +163,14 @@ class QAModel(object):
         else:
             gated_blended_reps = blended_reps1
 
+        decoder = RNNDecoder(self.FLAGS.hidden_size*8, self.keep_prob)
+        decoded_reps = decoder.build_graph(gated_blended_reps, self.context_mask) # (batch_size, context_len, hidden_size*16)
+
         # Apply fully connected layer to each blended representation
         # Note, blended_reps_final corresponds to b' in the handout
         # Note, tf.contrib.layers.fully_connected applies a ReLU non-linarity here by default
         # blended_reps_final is shape (batch_size, context_len, hidden_size)
-        blended_reps_final = tf.contrib.layers.fully_connected(gated_blended_reps, num_outputs=self.FLAGS.hidden_size) 
+        blended_reps_final = tf.contrib.layers.fully_connected(decoded_reps, num_outputs=self.FLAGS.hidden_size) 
 
         # Use softmax layer to compute probability distribution for start location
         # Note this produces self.logits_start and self.probdist_start, both of which have shape (batch_size, context_len)
