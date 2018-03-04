@@ -316,16 +316,14 @@ class GatedReps(object):
 
         with vs.variable_scope("GatedReps"):
 
-            """
-            #Wg = tf.get_variable("Wg", shape=[self.value_vec_size], 
-            #     initializer=tf.contrib.layers.xavier_initializer())
+            Wg = tf.get_variable("Wg", shape=[values.shape[0], self.value_vec_size, 1], 
+                 initializer=tf.contrib.layers.xavier_initializer())
 
-            gate = tf.sigmoid(tf.matmul(Wg, values)) # (batch_size, num_values)
+            gate = tf.sigmoid(tf.matmul(values, Wg)) # (batch_size, num_values)
 
             output = gate * values # (batch_size, num_values, value_vec_size)
 
             return output
-            """
 
 
 def masked_softmax(logits, mask, dim):
@@ -353,6 +351,7 @@ def masked_softmax(logits, mask, dim):
     return masked_logits, prob_dist
 
 def test_self_attn_layer():
+    print "Test self attention layer:"
     with tf.Graph().as_default():
         with tf.variable_scope("test_self_attn_layer"):
             # key_placeholder is shape (batch_size, context_len, hidden_size*2)
@@ -424,10 +423,22 @@ def test_dot_attn_layer():
                 assert np.allclose(attn_, expected_attn_, atol=1e-2), "attention not correct"
 
 
+def test_gated_reps_layer():
+    print "Test gated reps layer:"
+    with tf.Graph().as_default():
+        with tf.variable_scope("test_gated_reps_layer"):
+            value_placeholder = tf.placeholder(tf.float32, shape=[1, 3, 2])
+
+            gated_reps_layer = GatedReps(2)
+            output = gated_reps_layer.build_graph(value_placeholder) 
+            print "gated reps output shape = " + str(np.shape(output))
+
+
 def do_test(_):
     print "Testing starts:"
     test_self_attn_layer()
     test_dot_attn_layer()
+    test_gated_reps_layer()
     print "Passed!"
 
 if __name__ == "__main__":
