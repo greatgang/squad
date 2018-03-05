@@ -252,6 +252,41 @@ class SimpleSoftmaxLayer(object):
             return masked_logits, prob_dist
 
 
+class AnswerPointerLayer(object):
+    """
+    Module to take set of hidden states, (e.g. one for each context location),
+    and return probability distribution over those states.
+    """
+
+    def __init__(self, keep_prob, key_vec_size, value_vec_size):
+        self.keep_prob = keep_prob
+        self.key_vec_size = key_vec_size
+        self.value_vec_size = value_vec_size
+
+    def build_graph(self, values, values_mask, keys):
+
+        with vs.variable_scope("AnswerPointerLayer"):
+
+            basic_attn_layer = BasicAttn(self.keep_prob, 
+                                         self.key_vec_size,
+                                         self.value_vec_size, True)
+
+            # (batch_size, num_keys, num_values)
+            attn_dist, _ = basic_attn_layer.build_graph(values,
+                           values_mask, keys)
+
+            # (batch_size, num_values, num_keys)
+            attn_dist = tf.transpose(attn_dist, perm=[0, 2, 1]) 
+
+            # (batch_size, num_values)
+            attn_dist = tf.squeeze(attn_dist, axis=[2]) 
+
+            # Take softmax over sequence
+            masked_logits, prob_dist = masked_softmax(attn_dist, values_mask, 1)
+
+            return masked_logits, prob_dist
+
+
 class BasicAttn(object):
     """Module for basic attention.
 

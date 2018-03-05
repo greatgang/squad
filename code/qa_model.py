@@ -194,8 +194,12 @@ class QAModel(object):
         blended_reps_final = tf.contrib.layers.fully_connected(rnn_dot_attn_reps, num_outputs=self.FLAGS.hidden_size) 
 
         if self.FLAGS.use_answer_pointer:
-            # to be implemented
-	    print "not implemented"
+            with vs.variable_scope("StartDist"):
+                pointer_layer_start = AnswerPointerLayer(self.keep_prob, self.FLAGS.hidden_size*2, self.FLAGS.hidden_size*2)
+                self.logits_start, self.probdist_start = pointer_layer_start.build_graph(question_hiddens1, self.qn_mask, context_hiddens1)
+            with vs.variable_scope("EndDist"):
+                pointer_layer_end = AnswerPointerLayer(self.keep_prob, self.FLAGS.hidden_size*2, self.FLAGS.hidden_size*2)
+                self.logits_end, self.probdist_end = pointer_layer_end.build_graph(blended_reps_final, self.context_mask)
         else:
             # Use softmax layer to compute probability distribution for start location
             # Note this produces self.logits_start and self.probdist_start, both of which have shape (batch_size, context_len)
