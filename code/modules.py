@@ -48,10 +48,8 @@ class RNNEncoder0(object):
         """
         self.hidden_size = hidden_size
         self.keep_prob = keep_prob
-        self.rnn_cell_fw = rnn_cell.GRUCell(self.hidden_size)
-        self.rnn_cell_fw = DropoutWrapper(self.rnn_cell_fw, input_keep_prob=self.keep_prob)
-        self.rnn_cell_bw = rnn_cell.GRUCell(self.hidden_size)
-        self.rnn_cell_bw = DropoutWrapper(self.rnn_cell_bw, input_keep_prob=self.keep_prob)
+        self.rnn_cell = rnn_cell.GRUCell(self.hidden_size)
+        self.rnn_cell = DropoutWrapper(self.rnn_cell, input_keep_prob=self.keep_prob)
 
     def build_graph(self, inputs, masks):
         """
@@ -70,10 +68,7 @@ class RNNEncoder0(object):
 
             # Note: fw_out and bw_out are the hidden states for every timestep.
             # Each is shape (batch_size, seq_len, hidden_size).
-            (fw_out, bw_out), _ = tf.nn.bidirectional_dynamic_rnn(self.rnn_cell_fw, self.rnn_cell_bw, inputs, input_lens, dtype=tf.float32)
-
-            # Concatenate the forward and backward hidden states
-            out = tf.concat([fw_out, bw_out], 2)
+            out, _ = tf.nn.dynamic_rnn(self.rnn_cell, inputs, input_lens, dtype=tf.float32)
 
             # Apply dropout
             out = tf.nn.dropout(out, self.keep_prob)

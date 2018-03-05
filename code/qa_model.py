@@ -132,27 +132,27 @@ class QAModel(object):
         # Note: here the RNNEncoder is shared (i.e. the weights are the same)
         # between the context and the question.
         encoder0 = RNNEncoder0(self.FLAGS.hidden_size, self.keep_prob)
-        # (batch_size, context_len, hidden_size*2)
+        # (batch_size, context_len, hidden_size)
         context_hiddens0 = encoder0.build_graph(self.context_embs, self.context_mask) 
-        # (batch_size, question_len, hidden_size*2)
+        # (batch_size, question_len, hidden_size)
         question_hiddens0 = encoder0.build_graph(self.qn_embs, self.qn_mask) 
 
-        encoder1 = RNNEncoder1(self.FLAGS.hidden_size*2, self.keep_prob)
-        # (batch_size, context_len, hidden_size*4)
+        encoder1 = RNNEncoder1(self.FLAGS.hidden_size, self.keep_prob)
+        # (batch_size, context_len, hidden_size*2)
         context_hiddens1 = encoder1.build_graph(context_hiddens0, self.context_mask) 
-        # (batch_size, question_len, hidden_size*4)
+        # (batch_size, question_len, hidden_size*2)
         question_hiddens1 = encoder1.build_graph(question_hiddens0, self.qn_mask) 
 
         # Use context hidden states to attend to question hidden states
-        basic_attn_layer = BasicAttn(self.keep_prob, self.FLAGS.hidden_size*4, self.FLAGS.hidden_size*4, self.FLAGS.advanced_basic_attn)
-        # attn_output is shape (batch_size, context_len, hidden_size*4)
-        _, basic_attn_output = basic_attn_layer.build_graph(question_hiddens, self.qn_mask, context_hiddens) 
+        basic_attn_layer = BasicAttn(self.keep_prob, self.FLAGS.hidden_size*2, self.FLAGS.hidden_size*2, self.FLAGS.advanced_basic_attn)
+        # attn_output is shape (batch_size, context_len, hidden_size*2)
+        _, basic_attn_output = basic_attn_layer.build_graph(question_hiddens1, self.qn_mask, context_hiddens1) 
 
         # Concat basic_attn_output to context_hiddens to get blended_reps0
-        blended_reps0 = tf.concat([context_hiddens, basic_attn_output], axis=2) # (batch_size, context_len, hidden_size*8)
+        blended_reps0 = tf.concat([context_hiddens1, basic_attn_output], axis=2) # (batch_size, context_len, hidden_size*4)
 
-        rnnBasicAttn = RNNBasicAttn(self.FLAGS.hidden_size*8, self.keep_prob)
-        rnn_basic_attn_reps = rnnBasicAttn.build_graph(blended_reps0, self.context_mask) # (batch_size, context_len, hidden_size*8)
+        rnnBasicAttn = RNNBasicAttn(self.FLAGS.hidden_size*4, self.keep_prob)
+        rnn_basic_attn_reps = rnnBasicAttn.build_graph(blended_reps0, self.context_mask) # (batch_size, context_len, hidden_size*4)
         
         # Gang: adding self attention (R-NET)
         # self_attn_layer = SelfAttn(self.keep_prob, self.FLAGS.hidden_size*4)
@@ -160,21 +160,21 @@ class QAModel(object):
         # _, self_attn_output = self_attn_layer.build_graph(basic_attn_output, self.context_mask) 
 
         # Gang: adding dot attention (Attention Is All You Need)
-        dot_attn_layer = DotAttn(self.keep_prob, self.FLAGS.hidden_size*8, self.FLAGS.advanced_dot_attn)
-        # (batch_size, context_len, hidden_size*8)
+        dot_attn_layer = DotAttn(self.keep_prob, self.FLAGS.hidden_size*4, self.FLAGS.advanced_dot_attn)
+        # (batch_size, context_len, hidden_size*4)
         _, dot_attn_output = dot_attn_layer.build_graph(rnn_basic_attn_reps, self.context_mask) 
         
         # Concat dot_attn_output to blended_reps0 to get blended_reps1
-        blended_reps1 = tf.concat([rnn_basic_attn_reps, dot_attn_output], axis=2) # (batch_size, context_len, hidden_size*16)
+        blended_reps1 = tf.concat([rnn_basic_attn_reps, dot_attn_output], axis=2) # (batch_size, context_len, hidden_size*8)
 
         # Gang: adding gated representation (R-NET)
         if self.FLAGS.gated_reps:
-            gated_reps_layer = GatedReps(self.FLAGS.hidden_size*16)
+            gated_reps_layer = GatedReps(self.FLAGS.hidden_size*8)
             gated_blended_reps = gated_reps_layer.build_graph(blended_reps1)
         else:
             gated_blended_reps = blended_reps1
 
-        rnnDotAttn = RNNDotAttn(self.FLAGS.hidden_size*16, self.keep_prob)
+        rnnDotAttn = RNNDotAttn(self.FLAGS.hidden_size*8, self.keep_prob)
         rnn_dot_attn_reps = rnnDotAttn.build_graph(gated_blended_reps, self.context_mask) # (batch_size, context_len, hidden_size*32)
 
         # Apply fully connected layer to each blended representation
@@ -185,6 +185,7 @@ class QAModel(object):
 
         if self.FLAGS.use_answer_pointer:
             # to be implemented
+	    print "not implemented"
         else:
             # Use softmax layer to compute probability distribution for start location
             # Note this produces self.logits_start and self.probdist_start, both of which have shape (batch_size, context_len)
