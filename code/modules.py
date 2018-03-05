@@ -19,7 +19,7 @@ import sys
 
 import numpy as np
 import tensorflow as tf
-from tensorflow.python.ops.rnn_cell import DropoutWrapper
+from tensorflow.python.ops.rnn_cell import DropoutWrapper, MultiRNNCell
 from tensorflow.python.ops import variable_scope as vs
 from tensorflow.python.ops import rnn_cell
 
@@ -102,8 +102,10 @@ class RNNEncoder1(object):
         self.keep_prob = keep_prob
         self.rnn_cell_fw = rnn_cell.GRUCell(self.hidden_size)
         self.rnn_cell_fw = DropoutWrapper(self.rnn_cell_fw, input_keep_prob=self.keep_prob)
+        self.rnn_cell_fw = MultiRNNCell(self.rnn_cell_fw * 3)
         self.rnn_cell_bw = rnn_cell.GRUCell(self.hidden_size)
         self.rnn_cell_bw = DropoutWrapper(self.rnn_cell_bw, input_keep_prob=self.keep_prob)
+        self.rnn_cell_bw = MultiRNNCell(self.rnn_cell_bw * 3)
 
     def build_graph(self, inputs, masks):
         """
