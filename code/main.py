@@ -58,6 +58,7 @@ tf.app.flags.DEFINE_integer("advanced_basic_attn", True, "Turn on advanced versi
 tf.app.flags.DEFINE_integer("advanced_dot_attn", True, "Turn on advanced version of dot attention")
 tf.app.flags.DEFINE_integer("gated_reps", False, "Turn on gated representation")
 tf.app.flags.DEFINE_integer("use_answer_pointer", False, "Turn on answer pointer network")
+tf.app.flags.DEFINE_integer("more_single_dir_rnn", True, "Turn on more layers of single dir rnn")
 
 # How often to print, save, eval
 tf.app.flags.DEFINE_integer("print_every", 1, "How many iterations to do per print.")

@@ -128,20 +128,27 @@ class QAModel(object):
             These are the result of taking (masked) softmax of logits_start and logits_end.
         """
 
-        # Use a RNN to get hidden states for the context and the question
-        # Note: here the RNNEncoder is shared (i.e. the weights are the same)
-        # between the context and the question.
-        encoder0 = RNNEncoder0(self.FLAGS.hidden_size, self.keep_prob)
-        # (batch_size, context_len, hidden_size)
-        context_hiddens0 = encoder0.build_graph(self.context_embs, self.context_mask) 
-        # (batch_size, question_len, hidden_size)
-        question_hiddens0 = encoder0.build_graph(self.qn_embs, self.qn_mask) 
-
-        encoder1 = RNNEncoder1(self.FLAGS.hidden_size, self.keep_prob)
-        # (batch_size, context_len, hidden_size*2)
-        context_hiddens1 = encoder1.build_graph(context_hiddens0, self.context_mask) 
-        # (batch_size, question_len, hidden_size*2)
-        question_hiddens1 = encoder1.build_graph(question_hiddens0, self.qn_mask) 
+        if self.FLAGS.more_single_dir_rnn:
+            # Use a RNN to get hidden states for the context and the question
+            # Note: here the RNNEncoder is shared (i.e. the weights are the same)
+            # between the context and the question.
+            encoder0 = RNNEncoder0(self.FLAGS.hidden_size, self.keep_prob)
+            # (batch_size, context_len, hidden_size)
+            context_hiddens0 = encoder0.build_graph(self.context_embs, self.context_mask) 
+            # (batch_size, question_len, hidden_size)
+            question_hiddens0 = encoder0.build_graph(self.qn_embs, self.qn_mask) 
+    
+            encoder1 = RNNEncoder1(self.FLAGS.hidden_size, self.keep_prob)
+            # (batch_size, context_len, hidden_size*2)
+            context_hiddens1 = encoder1.build_graph(context_hiddens0, self.context_mask) 
+            # (batch_size, question_len, hidden_size*2)
+            question_hiddens1 = encoder1.build_graph(question_hiddens0, self.qn_mask) 
+        else:
+            encoder1 = RNNEncoder1(self.FLAGS.hidden_size, self.keep_prob)
+            # (batch_size, context_len, hidden_size*2)
+            context_hiddens1 = encoder1.build_graph(self.context_embs, self.context_mask) 
+            # (batch_size, question_len, hidden_size*2)
+            question_hiddens1 = encoder1.build_graph(self.qn_embs, self.qn_mask) 
 
         # Use context hidden states to attend to question hidden states
         basic_attn_layer = BasicAttn(self.keep_prob, self.FLAGS.hidden_size*2, self.FLAGS.hidden_size*2, self.FLAGS.advanced_basic_attn)
@@ -151,8 +158,11 @@ class QAModel(object):
         # Concat basic_attn_output to context_hiddens to get blended_reps0
         blended_reps0 = tf.concat([context_hiddens1, basic_attn_output], axis=2) # (batch_size, context_len, hidden_size*4)
 
-        rnnBasicAttn = RNNBasicAttn(self.FLAGS.hidden_size*4, self.keep_prob)
-        rnn_basic_attn_reps = rnnBasicAttn.build_graph(blended_reps0, self.context_mask) # (batch_size, context_len, hidden_size*4)
+        if self.FLAGS.more_single_dir_rnn:
+            rnnBasicAttn = RNNBasicAttn(self.FLAGS.hidden_size*4, self.keep_prob)
+            rnn_basic_attn_reps = rnnBasicAttn.build_graph(blended_reps0, self.context_mask) # (batch_size, context_len, hidden_size*4)
+        else:
+            rnn_basic_attn_reps = blended_reps0
         
         # Gang: adding self attention (R-NET)
         # self_attn_layer = SelfAttn(self.keep_prob, self.FLAGS.hidden_size*4)
