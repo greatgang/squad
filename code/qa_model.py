@@ -31,7 +31,9 @@ from evaluate import exact_match_score, f1_score
 from data_batcher import get_batch_generator
 from pretty_print import print_example
 from modules import (RNNEncoder0, RNNEncoder1, RNNBasicAttn, RNNDotAttn, SimpleSoftmaxLayer, 
-                     BasicAttn, SelfAttn, DotAttn, GatedReps)
+                     BasicAttn, SelfAttn, DotAttn, GatedReps,
+                     AnswerPointerLayerStart,
+                     AnswerPointerLayerEnd)
 
 logging.basicConfig(level=logging.INFO)
 
@@ -185,22 +187,28 @@ class QAModel(object):
             gated_blended_reps = blended_reps1
 
         rnnDotAttn = RNNDotAttn(self.FLAGS.hidden_size*8, self.keep_prob)
-        rnn_dot_attn_reps = rnnDotAttn.build_graph(gated_blended_reps, self.context_mask) # (batch_size, context_len, hidden_size*32)
-
-        # Apply fully connected layer to each blended representation
-        # Note, blended_reps_final corresponds to b' in the handout
-        # Note, tf.contrib.layers.fully_connected applies a ReLU non-linarity here by default
-        # blended_reps_final is shape (batch_size, context_len, hidden_size)
-        blended_reps_final = tf.contrib.layers.fully_connected(rnn_dot_attn_reps, num_outputs=self.FLAGS.hidden_size) 
+        # (batch_size, context_len, hidden_size*16)
+        rnn_dot_attn_reps = rnnDotAttn.build_graph(gated_blended_reps, self.context_mask) 
 
         if self.FLAGS.use_answer_pointer:
-            with vs.variable_scope("StartDist"):
-                pointer_layer_start = AnswerPointerLayer(self.keep_prob, self.FLAGS.hidden_size*2, self.FLAGS.hidden_size*2)
-                self.logits_start, self.probdist_start = pointer_layer_start.build_graph(question_hiddens1, self.qn_mask, context_hiddens1)
-            with vs.variable_scope("EndDist"):
-                pointer_layer_end = AnswerPointerLayer(self.keep_prob, self.FLAGS.hidden_size*2, self.FLAGS.hidden_size*2)
-                self.logits_end, self.probdist_end = pointer_layer_end.build_graph(blended_reps_final, self.context_mask)
+            blended_reps_final = tf.contrib.layers.fully_connected(rnn_dot_attn_reps, 
+                                 num_outputs = self.FLAGS.hidden_size*2) 
+
+            pointer_layer_start = AnswerPointerLayerStart(self.keep_prob, self.FLAGS.hidden_size*2)
+            rQ, self.logits_start, self.probdist_start = pointer_layer_start.build_graph(
+                                                         question_hiddens1, self.qn_mask, 
+                                                         blended_reps_final, self.context_mask)
+
+            pointer_layer_end = AnswerPointerLayerEnd(self.keep_prob, self.FLAGS.hidden_size*2)
+            self.logits_end, self.probdist_end = pointer_layer_end.build_graph(self.probdist_start, rQ, 
+                                                                               blended_reps_final, self.context_mask)
         else:
+            # Apply fully connected layer to each blended representation
+            # Note, blended_reps_final corresponds to b' in the handout
+            # Note, tf.contrib.layers.fully_connected applies a ReLU non-linarity here by default
+            # blended_reps_final is shape (batch_size, context_len, hidden_size)
+            blended_reps_final = tf.contrib.layers.fully_connected(rnn_dot_attn_reps, num_outputs=self.FLAGS.hidden_size) 
+
             # Use softmax layer to compute probability distribution for start location
             # Note this produces self.logits_start and self.probdist_start, both of which have shape (batch_size, context_len)
             with vs.variable_scope("StartDist"):

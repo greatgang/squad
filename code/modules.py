@@ -254,39 +254,104 @@ class SimpleSoftmaxLayer(object):
             return masked_logits, prob_dist
 
 
-class AnswerPointerLayer(object):
-    """
-    Module to take set of hidden states, (e.g. one for each context location),
-    and return probability distribution over those states.
-    """
+class AnswerPointerLayerStart(object):
 
-    def __init__(self, keep_prob, key_vec_size, value_vec_size):
+    def __init__(self, keep_prob, value_vec_size):
         self.keep_prob = keep_prob
-        self.key_vec_size = key_vec_size
         self.value_vec_size = value_vec_size
 
-    def build_graph(self, values, values_mask, keys):
+    def build_graph(self, questions, questions_mask, contexts, contexts_mask):
 
-        with vs.variable_scope("AnswerPointerLayer"):
+        with vs.variable_scope("AnswerPointerLayerStart"):
 
-            basic_attn_layer = BasicAttn(self.keep_prob, 
-                                         self.key_vec_size,
-                                         self.value_vec_size, True)
+            ###### start answer pooling ######
 
-            # (batch_size, num_keys, num_values)
-            attn_dist, _ = basic_attn_layer.build_graph(values,
-                           values_mask, keys)
+            Vrq = tf.get_variable("v_answer_pooling", shape=[1, self.value_vec_size], 
+                  initializer=tf.contrib.layers.xavier_initializer())
 
-            # (batch_size, num_values, num_keys)
-            attn_dist = tf.transpose(attn_dist, perm=[0, 2, 1]) 
+            # (value_vec_size, 1)
+            k = tf.layers.dense(Vrq, self.value_vec_size, activation=tf.nn.relu, use_bias=False, name="Wvrq")
+            # (batch_size, question_len, value_vec_size)
+            v = tf.layers.dense(questions, self.value_vec_size, activation=tf.nn.relu, use_bias=False, name="Wv")
 
-            # (batch_size, num_values)
-            attn_dist = tf.squeeze(attn_dist, axis=[2]) 
+            # (batch_size * question_len, value_vec_size)
+            v_flat = tf.reshape(v, [-1, self.value_vec_size])
+            # (value_vec_size, batch_size * question_len)
+            v_t = tf.transpose(v_flat) 
+            # (1, batch_size * question_len)
+            attn_logits_flat = tf.matmul(k, v_t / np.sqrt(self.value_vec_size))
+            # (batch_size, 1, question_len)
+            attn_logits = tf.reshape(attn_logits_flat, [tf.shape(v)[0], 1, tf.shape(v)[1]])
 
-            # Take softmax over sequence
-            masked_logits, prob_dist = masked_softmax(attn_dist, values_mask, 1)
+            attn_logits_mask = tf.expand_dims(questions_mask, 1) # shape (batch_size, 1, num_questions)
+            _, attn_dist = masked_softmax(attn_logits, attn_logits_mask, 2) # shape (batch_size, 1, num_questions)
 
-            return masked_logits, prob_dist
+            rQ = tf.matmul(attn_dist, v) # (batch_size, 1, value_vec_size)
+
+            ###### end answer pooling ######
+
+            # (batch_size, 1, value_vec_size)
+            k1 = tf.layers.dense(rQ, self.value_vec_size, activation=tf.nn.relu, use_bias=False, name="Wrq")
+            #print "k1 shape: " + str(k1.get_shape())
+            # (batch_size, context_len, value_vec_size)
+            v1 = tf.layers.dense(contexts, self.value_vec_size, activation=tf.nn.relu, use_bias=False, name="Wp")
+            #print "v1 shape: " + str(v1.get_shape())
+            # (batch_size, value_vec_size, context_len)
+            v1_t = tf.transpose(v1, perm=[0, 2, 1]) 
+
+            # (batch_size, 1, context_len)
+            attn_logits1 = tf.matmul(k1, v1_t / np.sqrt(self.value_vec_size))
+            # (batch_size, context_len)
+            squeezed_attn_logits1 = tf.squeeze(attn_logits1, axis=[1]) 
+            # (batch_size, context_len)
+            masked_logits1, prob_dist = masked_softmax(squeezed_attn_logits1, contexts_mask, 1) 
+
+            return rQ, masked_logits1, prob_dist
+
+
+class AnswerPointerLayerEnd(object):
+
+    def __init__(self, keep_prob, value_vec_size):
+        self.keep_prob = keep_prob
+        self.value_vec_size = value_vec_size
+        self.rnn_cell = rnn_cell.GRUCell(self.value_vec_size)
+
+    def build_graph(self, prob_dist, init_hidden_state, contexts, contexts_mask):
+
+        with vs.variable_scope("AnswerPointerLayerEnd"):
+
+            ###### start pointer rnn ######
+
+            # (batch_size, 1, context_len)
+            expanded_prob_dist = tf.expand_dims(prob_dist, 1) 
+            # (batch_size, 1, value_vec_size)
+            inputs = tf.matmul(expanded_prob_dist, contexts)
+            # (batch_size, 1, value_vec_size)
+            # (batch_size, value_vec_size)
+            squeezed_init_hidden_state = tf.squeeze(init_hidden_state, axis=[1]) 
+            _, final_state = tf.nn.dynamic_rnn(self.rnn_cell, inputs, 
+                             initial_state=squeezed_init_hidden_state, dtype=tf.float32)
+
+            ###### end pointer rnn ######
+
+            # (batch_size, 1, value_vec_size)
+            expanded_final_state = tf.expand_dims(final_state, 1)
+            # (batch_size, 1, value_vec_size)
+            k1 = tf.layers.dense(expanded_final_state, self.value_vec_size, 
+                                 activation=tf.nn.relu, use_bias=False, name="Wrq")
+            # (batch_size, context_len, value_vec_size)
+            v1 = tf.layers.dense(contexts, self.value_vec_size, activation=tf.nn.relu, use_bias=False, name="Wp")
+            # (batch_size, value_vec_size, context_len)
+            v1_t = tf.transpose(v1, perm=[0, 2, 1]) 
+
+            # (batch_size, 1, context_len)
+            attn_logits1 = tf.matmul(k1, v1_t / np.sqrt(self.value_vec_size))
+            # (batch_size, context_len)
+            squeezed_attn_logits1 = tf.squeeze(attn_logits1, axis=[1]) 
+            # (batch_size, context_len)
+            masked_logits1, prob_dist = masked_softmax(squeezed_attn_logits1, contexts_mask, 1) 
+
+            return masked_logits1, prob_dist
 
 
 class BasicAttn(object):
@@ -534,6 +599,20 @@ def masked_softmax(logits, mask, dim):
     prob_dist = tf.nn.softmax(masked_logits, dim)
     return masked_logits, prob_dist
 
+"""
+def test_attn_pooling_layer():
+    print "Test attn pooling layer:"
+    with tf.Graph().as_default():
+        with tf.variable_scope("test_attn_pooling_layer"):
+            value_placeholder = tf.placeholder(tf.float32, shape=[1, 3, 2])
+            value_mask_placeholder = tf.placeholder(tf.float32, shape=[1, 3])
+
+            attn_pooling_layer = AttnPoolingLayer(1, 2)
+            dist, attn_pooling_output = attn_pooling_layer.build_graph(value_placeholder, value_mask_placeholder) 
+            print "attn pooling distribution shape = " + str(np.shape(dist))
+            print "attn pooling output shape = " + str(np.shape(attn_pooling_output))
+"""
+
 def test_self_attn_layer():
     print "Test self attention layer:"
     with tf.Graph().as_default():
@@ -541,13 +620,6 @@ def test_self_attn_layer():
             # key_placeholder is shape (batch_size, context_len, hidden_size*2)
             value_placeholder = tf.placeholder(tf.float32, shape=[1, 3, 2])
             value_mask_placeholder = tf.placeholder(tf.float32, shape=[1, 3])
-
-            """
-            with tf.variable_scope("rnn"):
-                tf.get_variable("W_x", initializer=np.array(np.eye(3,2), dtype=np.float32))
-                tf.get_variable("W_h", initializer=np.array(np.eye(2,2), dtype=np.float32))
-                tf.get_variable("b",  initializer=np.array(np.ones(2), dtype=np.float32))
-            """
 
             #tf.get_variable_scope().reuse_variables()
             self_attn_layer = SelfAttn(1, 2)
@@ -620,6 +692,7 @@ def test_gated_reps_layer():
 
 def do_test(_):
     print "Testing starts:"
+    #test_attn_pooling_layer()
     test_self_attn_layer()
     test_dot_attn_layer()
     test_gated_reps_layer()
