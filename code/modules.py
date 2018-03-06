@@ -499,10 +499,11 @@ class GatedReps(object):
 
         with vs.variable_scope("GatedReps"):
 
-            Wg = tf.get_variable("Wg", shape=[values.shape[0], self.value_vec_size, 1], 
-                 initializer=tf.contrib.layers.xavier_initializer())
-
-            gate = tf.sigmoid(tf.matmul(values, Wg)) # (batch_size, num_values)
+            # (batch_size * num_values, value_vec_size) * (value_vec_size, 1)
+            # (batch_size * num_values, 1)
+            # (batch_size, num_values, 1)
+            gate = tf.contrib.layers.fully_connected(values, 
+                   num_outputs = 1, activation_fn=tf.nn.sigmoid) 
 
             output = gate * values # (batch_size, num_values, value_vec_size)
 
