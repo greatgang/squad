@@ -269,24 +269,25 @@ class AnswerPointerLayerStart(object):
             Vrq = tf.get_variable("v_answer_pooling", shape=[1, self.value_vec_size], 
                   initializer=tf.contrib.layers.xavier_initializer())
 
-            # (value_vec_size, 1)
+            # (1, value_vec_size)
             k = tf.layers.dense(Vrq, self.value_vec_size, activation=tf.nn.relu, use_bias=False, name="Wvrq")
             # (batch_size, question_len, value_vec_size)
             v = tf.layers.dense(questions, self.value_vec_size, activation=tf.nn.relu, use_bias=False, name="Wv")
 
-            # (batch_size * question_len, value_vec_size)
-            v_flat = tf.reshape(v, [-1, self.value_vec_size])
-            # (value_vec_size, batch_size * question_len)
-            v_t = tf.transpose(v_flat) 
-            # (1, batch_size * question_len)
-            attn_logits_flat = tf.matmul(k, v_t / np.sqrt(self.value_vec_size))
+            # (1, 1, value_vec_size)
+            expanded_k = tf.expand_dims(k, 0) 
+            # (batch_size, question_len, value_vec_size)
+            attn_logits_temp = tf.nn.tanh(expanded_k + v)
+            # (batch_size, question_len, 1)
+            attn_logits_projected = tf.contrib.layers.fully_connected(attn_logits_temp, num_outputs = 1) 
             # (batch_size, 1, question_len)
-            attn_logits = tf.reshape(attn_logits_flat, [tf.shape(v)[0], 1, tf.shape(v)[1]])
+            attn_logits = tf.transpose(attn_logits_projected, [0, 2, 1]) 
 
-            attn_logits_mask = tf.expand_dims(questions_mask, 1) # shape (batch_size, 1, num_questions)
-            _, attn_dist = masked_softmax(attn_logits, attn_logits_mask, 2) # shape (batch_size, 1, num_questions)
+            attn_logits_mask = tf.expand_dims(questions_mask, 1) # shape (batch_size, 1, question_len)
+            _, attn_dist = masked_softmax(attn_logits, attn_logits_mask, 2) # shape (batch_size, 1, question_len)
 
-            rQ = tf.matmul(attn_dist, v) # (batch_size, 1, value_vec_size)
+            # (batch_size, 1, value_vec_size)
+            rQ = tf.matmul(attn_dist, v) 
 
             ###### end answer pooling ######
 
@@ -296,13 +297,16 @@ class AnswerPointerLayerStart(object):
             # (batch_size, context_len, value_vec_size)
             v1 = tf.layers.dense(contexts, self.value_vec_size, activation=tf.nn.relu, use_bias=False, name="Wp")
             #print "v1 shape: " + str(v1.get_shape())
-            # (batch_size, value_vec_size, context_len)
-            v1_t = tf.transpose(v1, perm=[0, 2, 1]) 
 
-            # (batch_size, 1, context_len)
-            attn_logits1 = tf.matmul(k1, v1_t / np.sqrt(self.value_vec_size))
+            # (batch_size, context_len, value_vec_size)
+            attn_logits1_temp = tf.tanh(k1 + v1)
+            #print "attn_logits1_temp shape: " + str(attn_logits1_temp.get_shape())
+            # (batch_size, context_len, 1)
+            attn_logits1_projected = tf.contrib.layers.fully_connected(attn_logits1_temp, num_outputs = 1)
+            #print "attn_logits1_projected shape: " + str(attn_logits1_projected.get_shape())
             # (batch_size, context_len)
-            squeezed_attn_logits1 = tf.squeeze(attn_logits1, axis=[1]) 
+            squeezed_attn_logits1 = tf.squeeze(attn_logits1_projected, axis=[2]) 
+            #print "squeezed_attn_logits1 shape: " + str(squeezed_attn_logits1.get_shape())
             # (batch_size, context_len)
             masked_logits1, prob_dist = masked_softmax(squeezed_attn_logits1, contexts_mask, 1) 
 
@@ -336,18 +340,18 @@ class AnswerPointerLayerEnd(object):
 
             # (batch_size, 1, value_vec_size)
             expanded_final_state = tf.expand_dims(final_state, 1)
+
             # (batch_size, 1, value_vec_size)
-            k1 = tf.layers.dense(expanded_final_state, self.value_vec_size, 
-                                 activation=tf.nn.relu, use_bias=False, name="Wrq")
+            k1 = tf.layers.dense(expanded_final_state, self.value_vec_size, activation=tf.nn.relu, use_bias=False, name="Wrq")
             # (batch_size, context_len, value_vec_size)
             v1 = tf.layers.dense(contexts, self.value_vec_size, activation=tf.nn.relu, use_bias=False, name="Wp")
-            # (batch_size, value_vec_size, context_len)
-            v1_t = tf.transpose(v1, perm=[0, 2, 1]) 
 
-            # (batch_size, 1, context_len)
-            attn_logits1 = tf.matmul(k1, v1_t / np.sqrt(self.value_vec_size))
+            # (batch_size, context_len, value_vec_size)
+            attn_logits1_temp = tf.tanh(k1 + v1)
+            # (batch_size, context_len, 1)
+            attn_logits1_projected = tf.contrib.layers.fully_connected(attn_logits1_temp, num_outputs = 1)
             # (batch_size, context_len)
-            squeezed_attn_logits1 = tf.squeeze(attn_logits1, axis=[1]) 
+            squeezed_attn_logits1 = tf.squeeze(attn_logits1_projected, axis=[2]) 
             # (batch_size, context_len)
             masked_logits1, prob_dist = masked_softmax(squeezed_attn_logits1, contexts_mask, 1) 
 
