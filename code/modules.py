@@ -256,9 +256,24 @@ class SimpleSoftmaxLayer(object):
 
 class AnswerPointerLayerStart(object):
 
-    def __init__(self, keep_prob, value_vec_size):
+    def __init__(self, keep_prob, hidden_size, value_vec_size):
         self.keep_prob = keep_prob
+        self.hidden_size = hidden_size
         self.value_vec_size = value_vec_size
+
+        self.rnn_cell_fw1 = rnn_cell.GRUCell(self.hidden_size*2)
+        self.rnn_cell_fw1 = DropoutWrapper(self.rnn_cell_fw1, input_keep_prob=self.keep_prob)
+        self.rnn_cell_fw2 = rnn_cell.GRUCell(self.hidden_size*4)
+        self.rnn_cell_fw2 = DropoutWrapper(self.rnn_cell_fw2, input_keep_prob=self.keep_prob)
+        self.rnn_cell_fw3 = rnn_cell.GRUCell(self.hidden_size*8)
+        self.rnn_cell_fw3 = DropoutWrapper(self.rnn_cell_fw3, input_keep_prob=self.keep_prob)
+
+        self.rnn_cell_bw1 = rnn_cell.GRUCell(self.hidden_size*2)
+        self.rnn_cell_bw1 = DropoutWrapper(self.rnn_cell_bw1, input_keep_prob=self.keep_prob)
+        self.rnn_cell_bw2 = rnn_cell.GRUCell(self.hidden_size*4)
+        self.rnn_cell_bw2 = DropoutWrapper(self.rnn_cell_bw2, input_keep_prob=self.keep_prob)
+        self.rnn_cell_bw3 = rnn_cell.GRUCell(self.hidden_size*8)
+        self.rnn_cell_bw3 = DropoutWrapper(self.rnn_cell_bw3, input_keep_prob=self.keep_prob)
 
     def build_graph(self, questions, questions_mask, contexts, contexts_mask):
 
@@ -269,10 +284,36 @@ class AnswerPointerLayerStart(object):
             Vrq = tf.get_variable("v_answer_pooling", shape=[1, self.value_vec_size], 
                   initializer=tf.contrib.layers.xavier_initializer())
 
+            questions_input_lens = tf.reduce_sum(questions_mask, reduction_indices=1)
+
+            with vs.variable_scope("RNNLayer1"):
+                (self.fw_out1, self.bw_out1), _ = tf.nn.bidirectional_dynamic_rnn(
+                                                  self.rnn_cell_fw1, self.rnn_cell_bw1, 
+                                                  questions, questions_input_lens, 
+                                                  dtype=tf.float32)
+            # (batch_size, question_len, hidden_size * 4)
+            questions_out1 = tf.concat([self.fw_out1, self.bw_out1], 2)
+
+            with vs.variable_scope("RNNLayer2"):
+                (self.fw_out2, self.bw_out2), _ = tf.nn.bidirectional_dynamic_rnn(
+                                                  self.rnn_cell_fw2, self.rnn_cell_bw2, 
+                                                  questions_out1, questions_input_lens, 
+                                                  dtype=tf.float32)
+            # (batch_size, question_len, hidden_size * 8)
+            questions_out2 = tf.concat([self.fw_out2, self.bw_out2], 2)
+
+            with vs.variable_scope("RNNLayer3"):
+                (self.fw_out3, self.bw_out3), _ = tf.nn.bidirectional_dynamic_rnn(
+                                                  self.rnn_cell_fw3, self.rnn_cell_bw3, 
+                                                  questions_out2, questions_input_lens, 
+                                                  dtype=tf.float32)
+            # (batch_size, question_len, hidden_size * 16)
+            questions_out3 = tf.concat([self.fw_out3, self.bw_out3], 2)
+
             # (1, value_vec_size)
             k = tf.layers.dense(Vrq, self.value_vec_size, activation=tf.nn.relu, use_bias=False, name="Wvrq")
             # (batch_size, question_len, value_vec_size)
-            v = tf.layers.dense(questions, self.value_vec_size, activation=tf.nn.relu, use_bias=False, name="Wv")
+            v = tf.layers.dense(questions_out3, self.value_vec_size, activation=tf.nn.relu, use_bias=False, name="Wv")
 
             # (1, 1, value_vec_size)
             expanded_k = tf.expand_dims(k, 0) 
