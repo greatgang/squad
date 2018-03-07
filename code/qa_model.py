@@ -191,17 +191,16 @@ class QAModel(object):
         rnn_dot_attn_reps = rnnDotAttn.build_graph(gated_blended_reps, self.context_mask) 
 
         if self.FLAGS.use_answer_pointer:
-            blended_reps_final = tf.contrib.layers.fully_connected(rnn_dot_attn_reps, 
-                                 num_outputs = self.FLAGS.hidden_size*2) 
-
-            pointer_layer_start = AnswerPointerLayerStart(self.keep_prob, self.FLAGS.hidden_size*2)
+            pointer_layer_start = AnswerPointerLayerStart(self.keep_prob, self.FLAGS.hidden_size,
+                                  self.FLAGS.hidden_size*16)
             rQ, self.logits_start, self.probdist_start = pointer_layer_start.build_graph(
                                                          question_hiddens1, self.qn_mask, 
-                                                         blended_reps_final, self.context_mask)
+                                                         rnn_dot_attn_reps, self.context_mask)
 
-            pointer_layer_end = AnswerPointerLayerEnd(self.keep_prob, self.FLAGS.hidden_size*2)
+            pointer_layer_end = AnswerPointerLayerEnd(self.keep_prob, self.FLAGS.hidden_size, 
+                                self.FLAGS.hidden_size*16)
             self.logits_end, self.probdist_end = pointer_layer_end.build_graph(self.probdist_start, rQ, 
-                                                                               blended_reps_final, self.context_mask)
+                                                 rnn_dot_attn_reps, self.context_mask)
         else:
             # Apply fully connected layer to each blended representation
             # Note, blended_reps_final corresponds to b' in the handout

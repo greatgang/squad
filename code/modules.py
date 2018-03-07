@@ -256,8 +256,9 @@ class SimpleSoftmaxLayer(object):
 
 class AnswerPointerLayerStart(object):
 
-    def __init__(self, keep_prob, value_vec_size):
+    def __init__(self, keep_prob, hidden_size, value_vec_size):
         self.keep_prob = keep_prob
+        self.hidden_size = hidden_size
         self.value_vec_size = value_vec_size
 
     def build_graph(self, questions, questions_mask, contexts, contexts_mask):
@@ -266,31 +267,32 @@ class AnswerPointerLayerStart(object):
 
             ###### start answer pooling ######
 
-            Vrq = tf.get_variable("v_answer_pooling", shape=[1, self.value_vec_size], 
+            Vrq = tf.get_variable("v_answer_pooling", shape=[1, self.hidden_size*2], 
                   initializer=tf.contrib.layers.xavier_initializer())
 
-            # (value_vec_size, 1)
-            k = tf.layers.dense(Vrq, self.value_vec_size, activation=tf.nn.relu, use_bias=False, name="Wvrq")
-            # (batch_size, question_len, value_vec_size)
-            v = tf.layers.dense(questions, self.value_vec_size, activation=tf.nn.relu, use_bias=False, name="Wv")
+            # (hidden_size*2, 1)
+            k = tf.layers.dense(Vrq, self.hidden_size*2, activation=tf.nn.relu, use_bias=False, name="Wvrq")
+            # (batch_size, question_len, hidden_size*2)
+            v = tf.layers.dense(questions, self.hidden_size*2, activation=tf.nn.relu, use_bias=False, name="Wv")
 
-            # (batch_size * question_len, value_vec_size)
-            v_flat = tf.reshape(v, [-1, self.value_vec_size])
-            # (value_vec_size, batch_size * question_len)
+            # (batch_size * question_len, hidden_size*2)
+            v_flat = tf.reshape(v, [-1, self.hidden_size*2])
+            # (hidden_size*2, batch_size * question_len)
             v_t = tf.transpose(v_flat) 
             # (1, batch_size * question_len)
-            attn_logits_flat = tf.matmul(k, v_t / np.sqrt(self.value_vec_size))
+            attn_logits_flat = tf.matmul(k, v_t / np.sqrt(self.hidden_size*2))
             # (batch_size, 1, question_len)
             attn_logits = tf.reshape(attn_logits_flat, [tf.shape(v)[0], 1, tf.shape(v)[1]])
 
             attn_logits_mask = tf.expand_dims(questions_mask, 1) # shape (batch_size, 1, num_questions)
             _, attn_dist = masked_softmax(attn_logits, attn_logits_mask, 2) # shape (batch_size, 1, num_questions)
 
-            rQ = tf.matmul(attn_dist, v) # (batch_size, 1, value_vec_size)
+            rQ = tf.matmul(attn_dist, v) # (batch_size, 1, hidden_size*2)
 
             ###### end answer pooling ######
 
             # (batch_size, 1, value_vec_size)
+            # the dimenson of rQ will go from hidden_size*2 to value_vec_size
             k1 = tf.layers.dense(rQ, self.value_vec_size, activation=tf.nn.relu, use_bias=False, name="Wrq")
             #print "k1 shape: " + str(k1.get_shape())
             # (batch_size, context_len, value_vec_size)
@@ -311,10 +313,11 @@ class AnswerPointerLayerStart(object):
 
 class AnswerPointerLayerEnd(object):
 
-    def __init__(self, keep_prob, value_vec_size):
+    def __init__(self, keep_prob, hidden_size, value_vec_size):
         self.keep_prob = keep_prob
+        self.hidden_size = hidden_size
         self.value_vec_size = value_vec_size
-        self.rnn_cell = rnn_cell.GRUCell(self.value_vec_size)
+        self.rnn_cell = rnn_cell.GRUCell(self.hidden_size*2)
 
     def build_graph(self, prob_dist, init_hidden_state, contexts, contexts_mask):
 
@@ -326,15 +329,15 @@ class AnswerPointerLayerEnd(object):
             expanded_prob_dist = tf.expand_dims(prob_dist, 1) 
             # (batch_size, 1, value_vec_size)
             inputs = tf.matmul(expanded_prob_dist, contexts)
-            # (batch_size, 1, value_vec_size)
-            # (batch_size, value_vec_size)
+            # (batch_size, 1, hidden_size*2)
+            # (batch_size, hidden_size*2)
             squeezed_init_hidden_state = tf.squeeze(init_hidden_state, axis=[1]) 
             _, final_state = tf.nn.dynamic_rnn(self.rnn_cell, inputs, 
                              initial_state=squeezed_init_hidden_state, dtype=tf.float32)
 
             ###### end pointer rnn ######
 
-            # (batch_size, 1, value_vec_size)
+            # (batch_size, 1, hidden_size*2)
             expanded_final_state = tf.expand_dims(final_state, 1)
             # (batch_size, 1, value_vec_size)
             k1 = tf.layers.dense(expanded_final_state, self.value_vec_size, 
