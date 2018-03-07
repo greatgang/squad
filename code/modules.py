@@ -273,7 +273,8 @@ class AnswerPointerLayerStart(object):
             # (hidden_size*2, 1)
             k = tf.layers.dense(Vrq, self.hidden_size*2, activation=tf.nn.relu, use_bias=False, name="Wvrq")
             # (batch_size, question_len, hidden_size*2)
-            v = tf.layers.dense(questions, self.hidden_size*2, activation=tf.nn.relu, use_bias=False, name="Wv")
+            # v = tf.layers.dense(questions, self.hidden_size*2, activation=tf.nn.relu, use_bias=False, name="Wv")
+            v = questions
 
             # (batch_size * question_len, hidden_size*2)
             v_flat = tf.reshape(v, [-1, self.hidden_size*2])
@@ -296,7 +297,8 @@ class AnswerPointerLayerStart(object):
             k1 = tf.layers.dense(rQ, self.value_vec_size, activation=tf.nn.relu, use_bias=False, name="Wrq")
             #print "k1 shape: " + str(k1.get_shape())
             # (batch_size, context_len, value_vec_size)
-            v1 = tf.layers.dense(contexts, self.value_vec_size, activation=tf.nn.relu, use_bias=False, name="Wp")
+            # v1 = tf.layers.dense(contexts, self.value_vec_size, activation=tf.nn.relu, use_bias=False, name="Wp")
+            v1 = contexts
             #print "v1 shape: " + str(v1.get_shape())
             # (batch_size, value_vec_size, context_len)
             v1_t = tf.transpose(v1, perm=[0, 2, 1]) 
@@ -343,7 +345,8 @@ class AnswerPointerLayerEnd(object):
             k1 = tf.layers.dense(expanded_final_state, self.value_vec_size, 
                                  activation=tf.nn.relu, use_bias=False, name="Wrq")
             # (batch_size, context_len, value_vec_size)
-            v1 = tf.layers.dense(contexts, self.value_vec_size, activation=tf.nn.relu, use_bias=False, name="Wp")
+            # v1 = tf.layers.dense(contexts, self.value_vec_size, activation=tf.nn.relu, use_bias=False, name="Wp")
+            v1 = contexts
             # (batch_size, value_vec_size, context_len)
             v1_t = tf.transpose(v1, perm=[0, 2, 1]) 
 
@@ -406,7 +409,8 @@ class BasicAttn(object):
 
             if self.advanced_basic_attn:
                 k = tf.layers.dense(keys, self.key_vec_size, activation=tf.nn.relu, use_bias=False, name="Wk")
-                v = tf.layers.dense(values, self.value_vec_size, activation=tf.nn.relu, use_bias=False, name="Wv")
+                # v = tf.layers.dense(values, self.value_vec_size, activation=tf.nn.relu, use_bias=False, name="Wv")
+                v = values
             else:
                 k = keys
                 v = values
@@ -468,7 +472,8 @@ class SelfAttn(object):
 
             # source_sequence_length = tf.reduce_sum(values_mask, reduction_indices = 1)
             v1 = tf.layers.dense(values, self.value_vec_size, use_bias=False)
-            v2 = tf.layers.dense(values, self.value_vec_size, use_bias=False)
+            # v2 = tf.layers.dense(values, self.value_vec_size, use_bias=False)
+            v2 = values
 
             v = tf.get_variable("v_attention", shape=[self.value_vec_size], 
                 initializer=tf.contrib.layers.xavier_initializer())
@@ -528,10 +533,12 @@ class DotAttn(object):
 
             if self.advanced_dot_attn:
                 v1 = tf.layers.dense(values, self.value_vec_size, activation=tf.nn.relu, use_bias=False, name="W1")
-                v2 = tf.layers.dense(values, self.value_vec_size, activation=tf.nn.relu, use_bias=False, name="W2")
+                # v2 = tf.layers.dense(values, self.value_vec_size, activation=tf.nn.relu, use_bias=False, name="W2")
+                v2 = values
             else:
                 v1 = tf.layers.dense(values, self.value_vec_size, use_bias=False, name="W1")
-                v2 = tf.layers.dense(values, self.value_vec_size, use_bias=False, name="W2")
+                # v2 = tf.layers.dense(values, self.value_vec_size, use_bias=False, name="W2")
+                v2 = values
 
             if self.advanced_dot_attn:
                 self_attn_logits = tf.matmul(v1, 
