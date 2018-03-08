@@ -40,21 +40,25 @@ class RNNEncoder(object):
     This code uses a bidirectional GRU, but you could experiment with other types of RNN.
     """
 
-    def __init__(self, hidden_size, keep_prob, n_encoder_layers):
+    def __init__(self, hidden_size, batch_size, keep_prob, n_encoder_layers):
         """
         Inputs:
           hidden_size: int. Hidden size of the RNN
           keep_prob: Tensor containing a single scalar that is the keep probability (for dropout)
         """
         self.hidden_size = hidden_size
+        self.batch_size = batch_size
         self.keep_prob = keep_prob
         self.n_encoder_layers = n_encoder_layers
-        self.rnn_cell_fw = rnn_cell.GRUCell(self.hidden_size)
-        self.rnn_cell_fw = DropoutWrapper(self.rnn_cell_fw, input_keep_prob=self.keep_prob)
-        self.rnn_cell_fw = MultiRNNCell([self.rnn_cell_fw] * self.n_encoder_layers)
-        self.rnn_cell_bw = rnn_cell.GRUCell(self.hidden_size)
-        self.rnn_cell_bw = DropoutWrapper(self.rnn_cell_bw, input_keep_prob=self.keep_prob)
-        self.rnn_cell_bw = MultiRNNCell([self.rnn_cell_bw] * self.n_encoder_layers)
+
+        self.gru_fw = tf.contrib.cudnn_rnn.CudnnGRU(
+                      num_layers = self.n_encoder_layers, 
+                      num_units  = self.hidden_size, 
+                      input_size = self.hidden_size)
+        self.gru_bw = tf.contrib.cudnn_rnn.CudnnGRU( 
+                      num_layers = self.n_encoder_layers, 
+                      num_units  = self.hidden_size, 
+                      input_size = self.hidden_size)
 
     def build_graph(self, inputs, masks):
         """
@@ -71,12 +75,31 @@ class RNNEncoder(object):
         with vs.variable_scope("RNNEncoder"):
             input_lens = tf.reduce_sum(masks, reduction_indices=1) # shape (batch_size)
 
-            # Note: fw_out and bw_out are the hidden states for every timestep.
-            # Each is shape (batch_size, seq_len, hidden_size).
-            (fw_out, bw_out), _ = tf.nn.bidirectional_dynamic_rnn(self.rnn_cell_fw, self.rnn_cell_bw, inputs, input_lens, dtype=tf.float32)
+            # (seq_len, batch_size, input_size)
+            inputs_fw = tf.transpose(inputs, [1, 0, 2])
+
+            init_fw  = tf.Variable(tf.zeros([1, self.batch_size, self.hidden_size]))
+            param_fw = tf.Variable(tf.random_uniform([self.gru_fw.params_size()], -0.1, 0.1), 
+                                   validate_shape=False)
+            fw_out, _ = self.gru_fw(inputs_fw, init_fw, param_fw)
+
+            # (seq_len, batch_size, input_size)
+            inputs_bw = tf.reverse_sequence(inputs_fw, seq_lengths=input_lens,
+                                            seq_dim = 0, batch_dim = 1)
+
+            init_bw  = tf.Variable(tf.zeros([1, self.batch_size, self.hidden_size]))
+            param_bw = tf.Variable(tf.random_uniform([self.gru_bw.params_size()], -0.1, 0.1), 
+                                   validate_shape=False)
+            bw_out, _ = self.gru_bw(inputs_bw, init_bw, param_bw)
+
+            bw_out = tf.reverse_sequence(bw_out, seq_lengths=input_lens,
+                                         seq_dim = 0, batch_dim = 1)
 
             # Concatenate the forward and backward hidden states
             out = tf.concat([fw_out, bw_out], 2)
+
+            # (batch_size, seq_len, input_size)
+            out = tf.transpose(out, [1, 0, 2])
 
             # Apply dropout
             out = tf.nn.dropout(out, self.keep_prob)
@@ -86,16 +109,19 @@ class RNNEncoder(object):
 
 class RNNBasicAttn(object):
 
-    def __init__(self, hidden_size, keep_prob):
+    def __init__(self, hidden_size, batch_size, keep_prob):
         """
         Inputs:
           hidden_size: int. Hidden size of the RNN
           keep_prob: Tensor containing a single scalar that is the keep probability (for dropout)
         """
         self.hidden_size = hidden_size
+        self.batch_size = batch_size
         self.keep_prob = keep_prob
-        self.rnn_cell = rnn_cell.GRUCell(self.hidden_size)
-        self.rnn_cell = DropoutWrapper(self.rnn_cell, input_keep_prob=self.keep_prob)
+
+        self.gru = tf.contrib.cudnn_rnn.CudnnGRU(num_layers = 1, 
+                   num_units  = self.hidden_size, 
+                   input_size = self.hidden_size)
 
     def build_graph(self, inputs, masks):
         """
@@ -112,9 +138,16 @@ class RNNBasicAttn(object):
         with vs.variable_scope("RNNBasicAttn"):
             input_lens = tf.reduce_sum(masks, reduction_indices=1) # shape (batch_size)
 
-            # Note: fw_out and bw_out are the hidden states for every timestep.
-            # Each is shape (batch_size, seq_len, hidden_size).
-            out, _ = tf.nn.dynamic_rnn(self.rnn_cell, inputs, input_lens, dtype=tf.float32)
+            # (seq_len, batch_size, input_size)
+            inputs = tf.transpose(inputs, [1, 0, 2])
+
+            init  = tf.Variable(tf.zeros([1, self.batch_size, self.hidden_size]))
+            param = tf.Variable(tf.random_uniform([self.gru.params_size()], -0.1, 0.1), 
+                                validate_shape=False)
+            out, _ = self.gru(inputs, init, param)
+
+            # (batch_size, seq_len, input_size)
+            out = tf.transpose(out, [1, 0, 2])
 
             # Apply dropout
             out = tf.nn.dropout(out, self.keep_prob)

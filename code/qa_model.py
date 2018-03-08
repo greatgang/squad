@@ -130,7 +130,7 @@ class QAModel(object):
             These are the result of taking (masked) softmax of logits_start and logits_end.
         """
 
-        encoder = RNNEncoder(self.FLAGS.hidden_size, self.keep_prob, self.FLAGS.n_encoder_layers)
+        encoder = RNNEncoder(self.FLAGS.hidden_size, self.FLAGS.batch_size, self.keep_prob, self.FLAGS.n_encoder_layers)
         # (batch_size, context_len, hidden_size*2)
         context_hiddens = encoder.build_graph(self.context_embs, self.context_mask) 
         # (batch_size, question_len, hidden_size*2)
@@ -144,9 +144,8 @@ class QAModel(object):
         # Concat basic_attn_output to context_hiddens to get blended_reps0
         blended_reps0 = tf.concat([context_hiddens, basic_attn_output], axis=2) # (batch_size, context_len, hidden_size*4)
 
-        # rnnBasicAttn = RNNBasicAttn(self.FLAGS.hidden_size*4, self.keep_prob)
-        # rnn_basic_attn_reps = rnnBasicAttn.build_graph(blended_reps0, self.context_mask) # (batch_size, context_len, hidden_size*4)
-        rnn_basic_attn_reps = blended_reps0 # (batch_size, context_len, hidden_size*4)
+        rnnBasicAttn = RNNBasicAttn(self.FLAGS.hidden_size*4, self.FLAGS.batch_size, self.keep_prob)
+        rnn_basic_attn_reps = rnnBasicAttn.build_graph(blended_reps0, self.context_mask) # (batch_size, context_len, hidden_size*4)
         
         # Gang: adding self attention (R-NET)
         # self_attn_layer = SelfAttn(self.keep_prob, self.FLAGS.hidden_size*4)
