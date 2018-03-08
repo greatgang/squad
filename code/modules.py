@@ -79,6 +79,7 @@ class RNNEncoder(object):
             inputs_fw = tf.transpose(inputs, [1, 0, 2])
 
             init_fw  = tf.Variable(tf.zeros([1, self.batch_size, self.hidden_size]))
+            init_fw = init_fw[:, :inputs_fw.get_shape()[1], :]
             param_fw = tf.Variable(tf.random_uniform([self.gru_fw.params_size()], -0.1, 0.1), 
                                    validate_shape=False)
             fw_out, _ = self.gru_fw(inputs_fw, init_fw, param_fw)
@@ -88,6 +89,7 @@ class RNNEncoder(object):
                                             seq_dim = 0, batch_dim = 1)
 
             init_bw  = tf.Variable(tf.zeros([1, self.batch_size, self.hidden_size]))
+            init_bw = init_bw[:, :inputs_bw.get_shape()[1], :]
             param_bw = tf.Variable(tf.random_uniform([self.gru_bw.params_size()], -0.1, 0.1), 
                                    validate_shape=False)
             bw_out, _ = self.gru_bw(inputs_bw, init_bw, param_bw)
@@ -142,6 +144,7 @@ class RNNBasicAttn(object):
             inputs = tf.transpose(inputs, [1, 0, 2])
 
             init  = tf.Variable(tf.zeros([1, self.batch_size, self.hidden_size]))
+            init = init[:, :inputs.get_shape()[1], :]
             param = tf.Variable(tf.random_uniform([self.gru.params_size()], -0.1, 0.1), 
                                 validate_shape=False)
             out, _ = self.gru(inputs, init, param)
@@ -202,7 +205,9 @@ class RNNDotAttn(object):
             # (seq_len, batch_size, input_size)
             inputs_fw = tf.transpose(inputs, [1, 0, 2])
 
+            # last batch might not has the batch size
             init_fw  = tf.Variable(tf.zeros([1, self.batch_size, self.hidden_size]))
+            init_fw = init_fw[:, :inputs_fw.get_shape()[1], :]
             param_fw = tf.Variable(tf.random_uniform([self.gru_fw.params_size()], -0.1, 0.1), 
                                    validate_shape=False)
             fw_out, _ = self.gru_fw(inputs_fw, init_fw, param_fw)
@@ -212,6 +217,8 @@ class RNNDotAttn(object):
                                             seq_dim = 0, batch_dim = 1)
 
             init_bw  = tf.Variable(tf.zeros([1, self.batch_size, self.hidden_size]))
+            init_bw = init_bw[:, :inputs_bw.get_shape()[1], :]
+
             param_bw = tf.Variable(tf.random_uniform([self.gru_bw.params_size()], -0.1, 0.1), 
                                    validate_shape=False)
             bw_out, _ = self.gru_bw(inputs_bw, init_bw, param_bw)
