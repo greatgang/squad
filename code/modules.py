@@ -204,12 +204,15 @@ class RNNDotAttn(object):
 
             # (seq_len, batch_size, input_size)
             inputs_fw = tf.transpose(inputs, [1, 0, 2])
+            # print "inputs_fw shape: " + str(inputs_fw.get_shape())
 
             # last batch might not has the batch size
             init_fw  = tf.Variable(tf.zeros([1, self.batch_size, self.hidden_size]))
             init_fw = init_fw[:, :inputs_fw.get_shape()[1], :]
+            # print "init_fw shape: " + str(init_fw.get_shape())
             param_fw = tf.Variable(tf.random_uniform([self.gru_fw.params_size()], -0.1, 0.1), 
                                    validate_shape=False)
+            # print "param_fw shape: " + str(param_fw.get_shape())
             fw_out, _ = self.gru_fw(inputs_fw, init_fw, param_fw)
 
             # (seq_len, batch_size, input_size)
@@ -727,12 +730,43 @@ def test_dot_rnn_layer():
     with tf.Graph().as_default():
         with tf.variable_scope("test_dot_attn_layer"):
             # key_placeholder is shape (batch_size, context_len, hidden_size*2)
-            value_placeholder = tf.placeholder(tf.float32, shape=[1, 3, 2])
-            value_mask_placeholder = tf.placeholder(tf.float32, shape=[1, 3])
+            value_placeholder = tf.placeholder(tf.float32, shape=[2, 3, 2])
+            value_mask_placeholder = tf.placeholder(tf.float32, shape=[2, 3])
 
-            dot_rnn_layer = RNNDotAttn(2, 1, 1)
+            dot_rnn_layer = RNNDotAttn(2, 2, 1)
             output = dot_rnn_layer.build_graph(value_placeholder, value_mask_placeholder) 
+            print "Trainable variables: "
+            print tf.trainable_variables()
             print "dot rnn output shape = " + str(np.shape(output))
+
+            init = tf.global_variables_initializer()
+            with tf.Session() as session:
+                session.run(init)
+                v = np.array([
+                    [[0.4,  0.5], # batch 0
+                     [0.3, -0.2],
+                     [0.6, -0.1]],
+                    [[4, -5],     # batch 1
+                     [8,  2],
+                     [9, -1]]
+                    ], dtype=np.float32)
+                m = np.array([[1, 1, 0], # batch 0
+                              [1, 0, 0]  # batch 1
+                             ], dtype=np.float32)
+                out_ = session.run([out], feed_dict={value_placeholder: v, value_mask_placeholder: m})
+                print("\nout_ = ")
+                print out_
+                """
+                expected_attn_ = np.array([
+                    [[0.35962827, 0.21739789],  # batch 0
+                     [0.34725277, 0.13076939],
+                     [0.34975   , 0.14825001]],
+                    [[4, -5],                   # batch 1
+                     [4, -5],
+                     [4, -5]]
+                    ], dtype=np.float32)
+                assert np.allclose(attn_, expected_attn_, atol=1e-2), "attention not correct"
+                """
 
 
 def do_test(_):
