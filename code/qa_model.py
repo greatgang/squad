@@ -144,8 +144,9 @@ class QAModel(object):
         # Concat basic_attn_output to context_hiddens to get blended_reps0
         blended_reps0 = tf.concat([context_hiddens, basic_attn_output], axis=2) # (batch_size, context_len, hidden_size*4)
 
-        rnnBasicAttn = RNNBasicAttn(self.FLAGS.hidden_size*4, self.keep_prob)
-        rnn_basic_attn_reps = rnnBasicAttn.build_graph(blended_reps0, self.context_mask) # (batch_size, context_len, hidden_size*4)
+        # rnnBasicAttn = RNNBasicAttn(self.FLAGS.hidden_size*4, self.keep_prob)
+        # rnn_basic_attn_reps = rnnBasicAttn.build_graph(blended_reps0, self.context_mask) # (batch_size, context_len, hidden_size*4)
+        rnn_basic_attn_reps = blended_reps0 # (batch_size, context_len, hidden_size*4)
         
         # Gang: adding self attention (R-NET)
         # self_attn_layer = SelfAttn(self.keep_prob, self.FLAGS.hidden_size*4)
@@ -167,7 +168,7 @@ class QAModel(object):
         else:
             gated_blended_reps = blended_reps1
 
-        rnnDotAttn = RNNDotAttn(self.FLAGS.hidden_size*8, self.keep_prob)
+        rnnDotAttn = RNNDotAttn(self.FLAGS.hidden_size*8, self.FLAGS.batch_size, self.keep_prob)
         # (batch_size, context_len, hidden_size*16)
         rnn_dot_attn_reps = rnnDotAttn.build_graph(gated_blended_reps, self.context_mask) 
 

@@ -22,6 +22,7 @@ import tensorflow as tf
 from tensorflow.python.ops.rnn_cell import DropoutWrapper, MultiRNNCell
 from tensorflow.python.ops import variable_scope as vs
 from tensorflow.python.ops import rnn_cell
+from tensorflow.contrib.cudnn_rnn.python.ops import cudnn_rnn_ops
 
 class RNNEncoder(object):
     """
@@ -123,18 +124,27 @@ class RNNBasicAttn(object):
 
 class RNNDotAttn(object):
 
-    def __init__(self, hidden_size, keep_prob):
+    def __init__(self, hidden_size, batch_size, keep_prob):
         """
         Inputs:
           hidden_size: int. Hidden size of the RNN
           keep_prob: Tensor containing a single scalar that is the keep probability (for dropout)
         """
         self.hidden_size = hidden_size
+        self.batch_size = batch_size
         self.keep_prob = keep_prob
+        """
         self.rnn_cell_fw = rnn_cell.GRUCell(self.hidden_size)
         self.rnn_cell_fw = DropoutWrapper(self.rnn_cell_fw, input_keep_prob=self.keep_prob)
         self.rnn_cell_bw = rnn_cell.GRUCell(self.hidden_size)
         self.rnn_cell_bw = DropoutWrapper(self.rnn_cell_bw, input_keep_prob=self.keep_prob)
+        """
+        self.gru_fw = tf.contrib.cudnn_rnn.CudnnGRU(num_layers = 1, 
+                      num_units = self.hidden_size, 
+                      input_size= self.hidden_size)
+        self.gru_bw = tf.contrib.cudnn_rnn.CudnnGRU(num_layers = 1, 
+                      num_units = self.hidden_size, 
+                      input_size= self.hidden_size)
 
     def build_graph(self, inputs, masks):
         """
@@ -149,14 +159,38 @@ class RNNDotAttn(object):
             This is all hidden states (fw and bw hidden states are concatenated).
         """
         with vs.variable_scope("RNNDotAttn"):
-            input_lens = tf.reduce_sum(masks, reduction_indices=1) # shape (batch_size)
+            # shape (batch_size)
+            input_lens = tf.cast(tf.reduce_sum(masks, reduction_indices=1), tf.int32) 
 
             # Note: fw_out and bw_out are the hidden states for every timestep.
             # Each is shape (batch_size, seq_len, hidden_size).
-            (fw_out, bw_out), _ = tf.nn.bidirectional_dynamic_rnn(self.rnn_cell_fw, self.rnn_cell_bw, inputs, input_lens, dtype=tf.float32)
+            # (fw_out, bw_out), _ = tf.nn.bidirectional_dynamic_rnn(self.rnn_cell_fw, self.rnn_cell_bw, inputs, input_lens, dtype=tf.float32)
+
+            # (seq_len, batch_size, input_size)
+            inputs_fw = tf.transpose(inputs, [1, 0, 2])
+
+            init_fw  = tf.Variable(tf.zeros([1, self.batch_size, self.hidden_size]))
+            param_fw = tf.Variable(tf.random_uniform([self.gru_fw.params_size()], -0.1, 0.1), 
+                                   validate_shape=False)
+            fw_out, _ = self.gru_fw(inputs_fw, init_fw, param_fw)
+
+            # (seq_len, batch_size, input_size)
+            inputs_bw = tf.reverse_sequence(inputs_fw, seq_lengths=input_lens,
+                                            seq_dim = 0, batch_dim = 1)
+
+            init_bw  = tf.Variable(tf.zeros([1, self.batch_size, self.hidden_size]))
+            param_bw = tf.Variable(tf.random_uniform([self.gru_bw.params_size()], -0.1, 0.1), 
+                                   validate_shape=False)
+            bw_out, _ = self.gru_bw(inputs_bw, init_bw, param_bw)
+
+            bw_out = tf.reverse_sequence(bw_out, seq_lengths=input_lens,
+                                         seq_dim = 0, batch_dim = 1)
 
             # Concatenate the forward and backward hidden states
             out = tf.concat([fw_out, bw_out], 2)
+
+            # (batch_size, seq_len, input_size)
+            out = tf.transpose(out, [1, 0, 2])
 
             # Apply dropout
             out = tf.nn.dropout(out, self.keep_prob)
@@ -648,12 +682,26 @@ def test_gated_reps_layer():
             print "gated reps output shape = " + str(np.shape(output))
 
 
+def test_dot_rnn_layer():
+    print "Test dot rnn layer:"
+    with tf.Graph().as_default():
+        with tf.variable_scope("test_dot_attn_layer"):
+            # key_placeholder is shape (batch_size, context_len, hidden_size*2)
+            value_placeholder = tf.placeholder(tf.float32, shape=[1, 3, 2])
+            value_mask_placeholder = tf.placeholder(tf.float32, shape=[1, 3])
+
+            dot_rnn_layer = RNNDotAttn(2, 1, 1)
+            output = dot_rnn_layer.build_graph(value_placeholder, value_mask_placeholder) 
+            print "dot rnn output shape = " + str(np.shape(output))
+
+
 def do_test(_):
     print "Testing starts:"
     #test_attn_pooling_layer()
-    test_self_attn_layer()
-    test_dot_attn_layer()
-    test_gated_reps_layer()
+    #test_self_attn_layer()
+    #test_dot_attn_layer()
+    test_dot_rnn_layer()
+    #test_gated_reps_layer()
     print "Passed!"
 
 if __name__ == "__main__":
