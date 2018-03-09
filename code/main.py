@@ -54,11 +54,11 @@ tf.app.flags.DEFINE_integer("question_len", 30, "The maximum question length of 
 tf.app.flags.DEFINE_integer("embedding_size", 100, "Size of the pretrained word vectors. This needs to be one of the available GloVe dimensions: 50/100/200/300")
 
 # Gang: my parameters
-tf.app.flags.DEFINE_integer("advanced_basic_attn", True, "Turn on advanced version of basic attention")
-tf.app.flags.DEFINE_integer("advanced_dot_attn", True, "Turn on advanced version of dot attention")
-tf.app.flags.DEFINE_integer("gated_reps", False, "Turn on gated representation")
-tf.app.flags.DEFINE_integer("use_answer_pointer", True, "Turn on answer pointer network")
-tf.app.flags.DEFINE_integer("more_single_dir_rnn", False, "Turn on more layers of single dir rnn")
+tf.app.flags.DEFINE_boolean("advanced_basic_attn", True, "Turn on advanced version of basic attention")
+tf.app.flags.DEFINE_boolean("advanced_dot_attn", True, "Turn on advanced version of dot attention")
+tf.app.flags.DEFINE_boolean("gated_reps", False, "Turn on gated representation")
+tf.app.flags.DEFINE_boolean("use_answer_pointer", True, "Turn on answer pointer network")
+tf.app.flags.DEFINE_integer("n_encoder_layers", 3, "Number of layers for the encoder")
 
 # How often to print, save, eval
 tf.app.flags.DEFINE_integer("print_every", 1, "How many iterations to do per print.")
@@ -102,7 +102,7 @@ def initialize_model(session, model, train_dir, expect_exists):
         else:
             print "There is no saved checkpoint at %s. Creating model with fresh parameters." % train_dir
             session.run(tf.global_variables_initializer())
-            print 'Num params: %d' % sum(v.get_shape().num_elements() for v in tf.trainable_variables())
+            # print 'Num params: %d' % sum(v.get_shape().num_elements() for v in tf.trainable_variables())
 
 
 def main(unused_argv):
