@@ -753,7 +753,7 @@ def test_dot_rnn_layer():
                 m = np.array([[1, 1, 0], # batch 0
                               [1, 0, 0]  # batch 1
                              ], dtype=np.float32)
-                out_ = session.run([out], feed_dict={value_placeholder: v, value_mask_placeholder: m})
+                out_ = session.run(output, feed_dict={value_placeholder: v, value_mask_placeholder: m})
                 print("\nout_ = ")
                 print out_
                 """
