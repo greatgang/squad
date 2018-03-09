@@ -78,8 +78,8 @@ class RNNEncoder(object):
             # (seq_len, batch_size, input_size)
             inputs_fw = tf.transpose(inputs, [1, 0, 2])
 
-            init_fw  = tf.Variable(tf.zeros([1, self.batch_size, self.hidden_size]))
-            init_fw = init_fw[:, :inputs_fw.get_shape()[1], :]
+            init_fw = tf.Variable(tf.zeros([1, 1, self.hidden_size]))
+            init_fw = tf.tile(init_fw, [1, tf.shape(inputs_fw)[1], 1])
             param_fw = tf.Variable(tf.random_uniform([self.gru_fw.params_size()], -0.1, 0.1), 
                                    validate_shape=False)
             fw_out, _ = self.gru_fw(inputs_fw, init_fw, param_fw)
@@ -89,7 +89,7 @@ class RNNEncoder(object):
                                             seq_dim = 0, batch_dim = 1)
 
             init_bw  = tf.Variable(tf.zeros([1, self.batch_size, self.hidden_size]))
-            init_bw = init_bw[:, :inputs_bw.get_shape()[1], :]
+            init_bw = tf.tile(init_bw, [1, tf.shape(inputs_bw)[1], 1])
             param_bw = tf.Variable(tf.random_uniform([self.gru_bw.params_size()], -0.1, 0.1), 
                                    validate_shape=False)
             bw_out, _ = self.gru_bw(inputs_bw, init_bw, param_bw)
@@ -143,8 +143,8 @@ class RNNBasicAttn(object):
             # (seq_len, batch_size, input_size)
             inputs = tf.transpose(inputs, [1, 0, 2])
 
-            init  = tf.Variable(tf.zeros([1, self.batch_size, self.hidden_size]))
-            init = init[:, :inputs.get_shape()[1], :]
+            init = tf.Variable(tf.zeros([1, self.batch_size, self.hidden_size]))
+            init = tf.tile(init, [1, tf.shape(inputs)[1], 1])
             param = tf.Variable(tf.random_uniform([self.gru.params_size()], -0.1, 0.1), 
                                 validate_shape=False)
             out, _ = self.gru(inputs, init, param)
@@ -204,15 +204,15 @@ class RNNDotAttn(object):
 
             # (seq_len, batch_size, input_size)
             inputs_fw = tf.transpose(inputs, [1, 0, 2])
-            # print "inputs_fw shape: " + str(inputs_fw.get_shape())
+            #print "inputs_fw shape: " + str(inputs_fw.get_shape())
 
             # last batch might not has the batch size
-            init_fw  = tf.Variable(tf.zeros([1, self.batch_size, self.hidden_size]))
-            init_fw = init_fw[:, :inputs_fw.get_shape()[1], :]
-            # print "init_fw shape: " + str(init_fw.get_shape())
+            init_fw = tf.Variable(tf.zeros([1, 1, self.hidden_size]))
+            init_fw = tf.tile(init_fw, [1, tf.shape(inputs_fw)[1], 1])
+            #print "init_fw shape: " + str(init_fw.get_shape())
             param_fw = tf.Variable(tf.random_uniform([self.gru_fw.params_size()], -0.1, 0.1), 
                                    validate_shape=False)
-            # print "param_fw shape: " + str(param_fw.get_shape())
+            #print "param_fw shape: " + str(param_fw.get_shape())
             fw_out, _ = self.gru_fw(inputs_fw, init_fw, param_fw)
 
             # (seq_len, batch_size, input_size)
@@ -220,7 +220,7 @@ class RNNDotAttn(object):
                                             seq_dim = 0, batch_dim = 1)
 
             init_bw  = tf.Variable(tf.zeros([1, self.batch_size, self.hidden_size]))
-            init_bw = init_bw[:, :inputs_bw.get_shape()[1], :]
+            init_bw = tf.tile(init_bw, [1, tf.shape(inputs_bw)[1], 1])
 
             param_bw = tf.Variable(tf.random_uniform([self.gru_bw.params_size()], -0.1, 0.1), 
                                    validate_shape=False)
@@ -730,10 +730,10 @@ def test_dot_rnn_layer():
     with tf.Graph().as_default():
         with tf.variable_scope("test_dot_attn_layer"):
             # key_placeholder is shape (batch_size, context_len, hidden_size*2)
-            value_placeholder = tf.placeholder(tf.float32, shape=[2, 3, 2])
-            value_mask_placeholder = tf.placeholder(tf.float32, shape=[2, 3])
+            value_placeholder = tf.placeholder(tf.float32, shape=[None, 3, 2])
+            value_mask_placeholder = tf.placeholder(tf.float32, shape=[None, 3])
 
-            dot_rnn_layer = RNNDotAttn(2, 2, 1)
+            dot_rnn_layer = RNNDotAttn(2, 4, 1)
             output = dot_rnn_layer.build_graph(value_placeholder, value_mask_placeholder) 
             print "Trainable variables: "
             print tf.trainable_variables()
@@ -756,7 +756,6 @@ def test_dot_rnn_layer():
                 out_ = session.run(output, feed_dict={value_placeholder: v, value_mask_placeholder: m})
                 print("\nout_ = ")
                 print out_
-                """
                 expected_attn_ = np.array([
                     [[0.35962827, 0.21739789],  # batch 0
                      [0.34725277, 0.13076939],
@@ -766,7 +765,6 @@ def test_dot_rnn_layer():
                      [4, -5]]
                     ], dtype=np.float32)
                 assert np.allclose(attn_, expected_attn_, atol=1e-2), "attention not correct"
-                """
 
 
 def do_test(_):
