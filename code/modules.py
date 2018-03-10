@@ -127,7 +127,7 @@ class uniRNN(object):
              out: (batch_size, seq_len, hidden_size)
         """
         with vs.variable_scope("uniRNN"):
-            input_lens = tf.cast(tf.reduce_sum(masks, reduction_indices=1)) # shape (batch_size)
+            input_lens = tf.cast(tf.reduce_sum(masks, reduction_indices=1), tf.int32) # shape (batch_size)
 
             if self.use_cudnn:
 
