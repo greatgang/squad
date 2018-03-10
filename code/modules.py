@@ -146,8 +146,7 @@ class uniRNN(object):
             else:
 
                 # (batch_size, seq_len, hidden_size).
-                out, _ = tf.nn.bidirectional_dynamic_rnn(self.rnn_cell, 
-                         inputs, input_lens, dtype=tf.float32)
+                out, _ = tf.nn.dynamic_rnn(self.rnn_cell, inputs, input_lens, dtype=tf.float32)
 
             # Apply dropout
             out = tf.nn.dropout(out, self.keep_prob)
@@ -372,6 +371,70 @@ class BasicAttn(object):
             output = tf.nn.dropout(output, self.keep_prob)
 
             return attn_dist, output
+
+
+class biDAF(object):
+
+    def __init__(self, keep_prob, value_vec_size):
+
+        self.keep_prob = keep_prob
+        self.value_vec_size = value_vec_size
+
+    def build_graph(self, questions, questions_mask, contexts, contexts_mask):
+
+        with vs.variable_scope("biDAF"):
+
+            # (batch_size, context_len, 1)
+            c = tf.layers.dense(contexts, 1, activation=None, use_bias=False, name="Wsim_c")
+            #print "shape c: " + str(c.get_shape())
+            # (batch_size, question_len, 1)
+            q = tf.layers.dense(questions, 1, activation=None, use_bias=False, name="Wsim_q")
+            #print "shape q: " + str(q.get_shape())
+
+            w = tf.get_variable("Wsim_cq", shape=[1, 1, self.value_vec_size], 
+                initializer=tf.contrib.layers.xavier_initializer())
+            # (batch_size, context_len, value_vec_size)
+            cw = tf.multiply(contexts, w)
+            #print "shape cw: " + str(cw.get_shape())
+            # cw: (batch_size, context_len, value_vec_size)
+            # questions: (batch_size, question_len, value_vec_size)
+            # (batch_size, value_vec_size, question_len)
+            questions_t = tf.transpose(questions, perm=[0, 2, 1])
+            # (batch_size, context_len, question_len)
+            cq = tf.matmul(cw, questions_t)
+            #print "shape cq: " + str(cq.get_shape())
+
+            # (batch_size, 1, question_len)
+            q_t = tf.transpose(q, perm=[0, 2, 1]) 
+            # (batch_size, context_len, question_len)
+            S = c + q_t + cq
+            #print "shape S: " + str(S.get_shape())
+
+            # (batch_size, 1, question_len)
+            attn_questions_mask = tf.expand_dims(questions_mask, 1) 
+            # (batch_size, context_len, question_len)
+            _, attn_question_dist = masked_softmax(S, attn_questions_mask, 2) 
+
+            # (batch_size, context_len, value_vec_size)
+            A = tf.matmul(attn_question_dist, questions) 
+
+            # (batch_size, context_len)
+            m = tf.reduce_max(S, axis=2)
+            # (batch_size, context_len)
+            _, attn_context_dist = masked_softmax(m, contexts_mask, 1) 
+
+            # (batch_size, 1, context_len)
+            attn_context_dist_exp = tf.expand_dims(attn_context_dist, 1) 
+            # (batch_size, 1, value_vec_size)
+            c_p = tf.matmul(attn_context_dist_exp, contexts)
+
+            # (batch_size, context_len, hidden_size * 8)
+            output = tf.concat([contexts, A, contexts * A, contexts * c_p], 2)
+
+            # Apply dropout
+            output = tf.nn.dropout(output, self.keep_prob)
+
+            return output
 
 
 class SelfAttn(object):
@@ -708,13 +771,33 @@ def test_dense_layer():
                 #assert np.allclose(attn_, expected_attn_, atol=1e-2), "attention not correct"
 
 
+def test_bidaf_layer():
+    print "Test bidaf layer:"
+    with tf.Graph().as_default():
+        with tf.variable_scope("test_bidaf_layer"):
+            question_placeholder = tf.placeholder(tf.float32, shape=[None, 3, 2])
+            question_mask_placeholder = tf.placeholder(tf.float32, shape=[None, 3])
+            context_placeholder = tf.placeholder(tf.float32, shape=[None, 4, 2])
+            context_mask_placeholder = tf.placeholder(tf.float32, shape=[None, 4])
+
+            bidaf_layer = biDAF(1, 2)
+            output = bidaf_layer.build_graph(question_placeholder, 
+                                             question_mask_placeholder,
+                                             context_placeholder,
+                                             context_mask_placeholder) 
+            print "Trainable variables: "
+            print tf.trainable_variables()
+            print "bidaf output shape = " + str(np.shape(output))
+
+
 def do_test(_):
     print "Testing starts:"
     #test_attn_pooling_layer()
     #test_self_attn_layer()
     #test_dot_attn_layer()
     #test_dot_rnn_layer()
-    test_dense_layer()
+    #test_dense_layer()
+    test_bidaf_layer()
     #test_gated_reps_layer()
     print "Passed!"
 

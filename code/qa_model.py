@@ -31,7 +31,8 @@ from evaluate import exact_match_score, f1_score
 from data_batcher import get_batch_generator
 from pretty_print import print_example
 from modules import (biRNN, uniRNN, SimpleSoftmaxLayer, 
-                     BasicAttn, SelfAttn, DotAttn, GatedReps,
+                     biDAF, BasicAttn, SelfAttn, 
+                     DotAttn, GatedReps,
                      AnswerPointerLayerStart,
                      AnswerPointerLayerEnd)
 
@@ -132,25 +133,35 @@ class QAModel(object):
         """
 
         with vs.variable_scope("contextEncoder"):
-            encoderCtx = biRNN(self.FLAGS.hidden_size, self.FLAGS.batch_size, self.keep_prob, self.FLAGS.n_encoder_layers, True)
+            encoderCtx = biRNN(self.FLAGS.hidden_size, self.FLAGS.batch_size, self.keep_prob, 
+                               self.FLAGS.n_encoder_layers, self.FLAGS.use_cudnn_rnn)
             # (batch_size, context_len, hidden_size*2)
             context_hiddens = encoderCtx.build_graph(self.context_embs, self.context_mask) 
         with vs.variable_scope("questionEncoder"):
-            encoderQue = biRNN(self.FLAGS.hidden_size, self.FLAGS.batch_size, self.keep_prob, self.FLAGS.n_encoder_layers, True)
+            encoderQue = biRNN(self.FLAGS.hidden_size, self.FLAGS.batch_size, self.keep_prob, 
+                               self.FLAGS.n_encoder_layers, self.FLAGS.use_cudnn_rnn)
             # (batch_size, question_len, hidden_size*2)
             question_hiddens = encoderQue.build_graph(self.qn_embs, self.qn_mask) 
 
+        """
         # Use context hidden states to attend to question hidden states
         basic_attn_layer = BasicAttn(self.keep_prob, self.FLAGS.hidden_size*2, self.FLAGS.hidden_size*2, self.FLAGS.advanced_basic_attn)
         # attn_output is shape (batch_size, context_len, hidden_size*2)
         _, basic_attn_output = basic_attn_layer.build_graph(question_hiddens, self.qn_mask, context_hiddens) 
+        """
+
+        bidaf_layer = biDAF(self.keep_prob, self.FLAGS.hidden_size*2)
+        # (batch_size, context_len, hidden_size*8)
+        bidaf_output = bidaf_layer.build_graph(question_hiddens, self.qn_mask, context_hiddens, self.context_mask) 
 
         # Concat basic_attn_output to context_hiddens to get blended_reps0
-        blended_reps0 = tf.concat([context_hiddens, basic_attn_output], axis=2) # (batch_size, context_len, hidden_size*4)
+        # blended_reps0 = tf.concat([context_hiddens, basic_attn_output], axis=2) # (batch_size, context_len, hidden_size*4)
 
         with vs.variable_scope("mutualAttnEncoder"):
-            mutualAttnEncoder = uniRNN(self.FLAGS.hidden_size*4, self.FLAGS.batch_size, self.keep_prob, True)
-            rnn_basic_attn_reps = mutualAttnEncoder.build_graph(blended_reps0, self.context_mask) # (batch_size, context_len, hidden_size*4)
+            mutualAttnEncoder = uniRNN(self.FLAGS.hidden_size * 8, self.FLAGS.batch_size, self.keep_prob, 
+                                       self.FLAGS.use_cudnn_rnn)
+            # (batch_size, context_len, hidden_size * 8)
+            rnn_basic_attn_reps = mutualAttnEncoder.build_graph(bidaf_output, self.context_mask) 
         
         # Gang: adding self attention (R-NET)
         # self_attn_layer = SelfAttn(self.keep_prob, self.FLAGS.hidden_size*4)
@@ -158,34 +169,36 @@ class QAModel(object):
         # _, self_attn_output = self_attn_layer.build_graph(basic_attn_output, self.context_mask) 
 
         # Gang: adding dot attention (Attention Is All You Need)
-        dot_attn_layer = DotAttn(self.keep_prob, self.FLAGS.hidden_size*4, self.FLAGS.advanced_dot_attn)
-        # (batch_size, context_len, hidden_size*4)
+        dot_attn_layer = DotAttn(self.keep_prob, self.FLAGS.hidden_size*8, self.FLAGS.advanced_dot_attn)
+        # (batch_size, context_len, hidden_size * 8)
         _, dot_attn_output = dot_attn_layer.build_graph(rnn_basic_attn_reps, self.context_mask) 
         
         # Concat dot_attn_output to blended_reps0 to get blended_reps1
-        blended_reps1 = tf.concat([rnn_basic_attn_reps, dot_attn_output], axis=2) # (batch_size, context_len, hidden_size*8)
+        # (batch_size, context_len, hidden_size * 16)
+        blended_reps1 = tf.concat([rnn_basic_attn_reps, dot_attn_output], axis=2) 
 
         # Gang: adding gated representation (R-NET)
         if self.FLAGS.gated_reps:
-            gated_reps_layer = GatedReps(self.FLAGS.hidden_size*8)
+            gated_reps_layer = GatedReps(self.FLAGS.hidden_size * 16)
             gated_blended_reps = gated_reps_layer.build_graph(blended_reps1)
         else:
             gated_blended_reps = blended_reps1
 
         with vs.variable_scope("selfAttnEncoder"):
-            selfAttnEncoder = biRNN(self.FLAGS.hidden_size*8, self.FLAGS.batch_size, self.keep_prob, 1, True)
-            # (batch_size, question_len, hidden_size*16)
+            selfAttnEncoder = biRNN(self.FLAGS.hidden_size * 16, self.FLAGS.batch_size, self.keep_prob, 
+                                    1, self.FLAGS.use_cudnn_rnn)
+            # (batch_size, question_len, hidden_size * 32)
             rnn_dot_attn_reps = selfAttnEncoder.build_graph(gated_blended_reps, self.context_mask) 
 
         if self.FLAGS.use_answer_pointer:
             pointer_layer_start = AnswerPointerLayerStart(self.keep_prob, self.FLAGS.hidden_size,
-                                  self.FLAGS.hidden_size*16)
+                                  self.FLAGS.hidden_size*32)
             rQ, self.logits_start, self.probdist_start = pointer_layer_start.build_graph(
                                                          question_hiddens, self.qn_mask, 
                                                          rnn_dot_attn_reps, self.context_mask)
 
             pointer_layer_end = AnswerPointerLayerEnd(self.keep_prob, self.FLAGS.hidden_size, 
-                                self.FLAGS.hidden_size*16)
+                                self.FLAGS.hidden_size*32)
             self.logits_end, self.probdist_end = pointer_layer_end.build_graph(self.probdist_start, rQ, 
                                                  rnn_dot_attn_reps, self.context_mask)
         else:
