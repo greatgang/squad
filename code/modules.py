@@ -681,12 +681,40 @@ def test_dot_rnn_layer():
                 #assert np.allclose(attn_, expected_attn_, atol=1e-2), "attention not correct"
 
 
+def test_dense_layer():
+    print "Test dense layer:"
+    with tf.Graph().as_default():
+        with tf.variable_scope("test_dense_layer"):
+            value_placeholder = tf.placeholder(tf.float32, shape=[3, 2])
+
+            v1 = tf.layers.dense(value_placeholder, 2, use_bias=False, name="W")
+            loss = tf.reduce_sum(v1)
+            print "dense layer output shape = " + str(np.shape(v1))
+            print "loss shape = " + str(np.shape(loss))
+
+            init = tf.global_variables_initializer()
+            opt = tf.train.AdadeltaOptimizer()
+            with tf.Session() as session:
+                session.run(init)
+                v = np.array(
+                    [[4, -5],     # batch 0
+                     [8,  2],
+                     [9, -1]] , dtype=np.float32)
+                out_ = session.run(loss, feed_dict={value_placeholder: v})
+                print "Trainable variables: "
+                print tf.trainable_variables()
+                print("out_ = ")
+                print out_
+                #assert np.allclose(attn_, expected_attn_, atol=1e-2), "attention not correct"
+
+
 def do_test(_):
     print "Testing starts:"
     #test_attn_pooling_layer()
     #test_self_attn_layer()
     #test_dot_attn_layer()
-    test_dot_rnn_layer()
+    #test_dot_rnn_layer()
+    test_dense_layer()
     #test_gated_reps_layer()
     print "Passed!"
 
