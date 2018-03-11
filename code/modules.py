@@ -41,9 +41,15 @@ class biRNN(object):
             self.rnn_bw = tf.contrib.cudnn_rnn.CudnnGRU(num_layers = 1, 
                           num_units = self.hidden_size, input_size = self.hidden_size)
         else:
+            """
             self.rnn_cell_fw = DropoutWrapper(rnn_cell.GRUCell(self.hidden_size), 
                                input_keep_prob = self.keep_prob)
             self.rnn_cell_bw = DropoutWrapper(rnn_cell.GRUCell(self.hidden_size), 
+                               input_keep_prob = self.keep_prob)
+            """
+            self.rnn_cell_fw = DropoutWrapper(cudnn_rnn_ops.CudnnCompatibleGRUCell(self.hidden_size), 
+                               input_keep_prob = self.keep_prob)
+            self.rnn_cell_bw = DropoutWrapper(cudnn_rnn_ops.CudnnCompatibleGRUCell(self.hidden_size), 
                                input_keep_prob = self.keep_prob)
 
     def build_graph(self, inputs, masks):
@@ -114,7 +120,11 @@ class uniRNN(object):
                        num_units  = self.hidden_size, 
                        input_size = self.hidden_size)
         else:
+            """
             self.rnn_cell = DropoutWrapper(rnn_cell.GRUCell(self.hidden_size), 
+                            input_keep_prob = self.keep_prob)
+            """
+            self.rnn_cell = DropoutWrapper(cudnn_rnn_ops.CudnnCompatibleGRUCell(self.hidden_size), 
                             input_keep_prob = self.keep_prob)
 
     def build_graph(self, inputs, masks):
