@@ -46,11 +46,15 @@ class biRNN(object):
                                input_keep_prob = self.keep_prob)
             self.rnn_cell_bw = DropoutWrapper(rnn_cell.GRUCell(self.hidden_size), 
                                input_keep_prob = self.keep_prob)
-            """
             self.rnn_cell_fw = DropoutWrapper(cudnn_rnn_ops.CudnnCompatibleGRUCell(self.hidden_size), 
                                input_keep_prob = self.keep_prob)
             self.rnn_cell_bw = DropoutWrapper(cudnn_rnn_ops.CudnnCompatibleGRUCell(self.hidden_size), 
                                input_keep_prob = self.keep_prob)
+            """
+            self.single_cell_fw = lambda: tf.contrib.cudnn_rnn.CudnnCompatibleGRUCell(self.hidden_size)
+            self.rnn_cell_fw = tf.nn.rnn_cell.MultiRNNCell( [self.single_cell_fw() for _ in range(1)])
+            self.single_cell_bw = lambda: tf.contrib.cudnn_rnn.CudnnCompatibleGRUCell(self.hidden_size)
+            self.rnn_cell_bw = tf.nn.rnn_cell.MultiRNNCell( [self.single_cell_bw() for _ in range(1)])
 
     def build_graph(self, inputs, masks):
         """
@@ -123,9 +127,11 @@ class uniRNN(object):
             """
             self.rnn_cell = DropoutWrapper(rnn_cell.GRUCell(self.hidden_size), 
                             input_keep_prob = self.keep_prob)
-            """
             self.rnn_cell = DropoutWrapper(cudnn_rnn_ops.CudnnCompatibleGRUCell(self.hidden_size), 
                             input_keep_prob = self.keep_prob)
+            """
+            self.single_cell = lambda: tf.contrib.cudnn_rnn.CudnnCompatibleGRUCell(self.hidden_size)
+            self.rnn_cell = tf.nn.rnn_cell.MultiRNNCell( [self.single_cell() for _ in range(1)])
 
     def build_graph(self, inputs, masks):
         """
