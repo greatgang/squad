@@ -79,8 +79,8 @@ tf.app.flags.DEFINE_string("json_out_path", "predictions.json", "Output path for
 
 
 FLAGS = tf.app.flags.FLAGS
-#os.environ["CUDA_VISIBLE_DEVICES"] = str(FLAGS.gpu)
-os.environ["CUDA_VISIBLE_DEVICES"] = str('0, 1')
+os.environ["CUDA_VISIBLE_DEVICES"] = str(FLAGS.gpu)
+#os.environ["CUDA_VISIBLE_DEVICES"] = str('0, 1')
 
 
 def initialize_model(session, model, train_dir, expect_exists):
