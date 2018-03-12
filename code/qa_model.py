@@ -158,11 +158,14 @@ class QAModel(object):
         # Concat basic_attn_output to context_hiddens to get blended_reps0
         # blended_reps0 = tf.concat([context_hiddens, basic_attn_output], axis=2) # (batch_size, context_len, hidden_size*4)
 
+        """
         with vs.variable_scope("mutualAttnEncoder"):
             mutualAttnEncoder = uniRNN(self.FLAGS.hidden_size * 8, self.FLAGS.batch_size, self.keep_prob, 
                                        self.FLAGS.use_cudnn_rnn)
             # (batch_size, context_len, hidden_size * 8)
             rnn_basic_attn_reps = mutualAttnEncoder.build_graph(bidaf_output, self.context_mask) 
+        """
+        rnn_basic_attn_reps = bidaf_output 
     
         # Gang: adding self attention (R-NET)
         # self_attn_layer = SelfAttn(self.keep_prob, self.FLAGS.hidden_size*4)

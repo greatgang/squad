@@ -50,7 +50,7 @@ tf.app.flags.DEFINE_float("epsilon", 1e-6, "Epsilon.")
 tf.app.flags.DEFINE_float("max_gradient_norm", 5.0, "Clip gradients to this norm.")
 tf.app.flags.DEFINE_float("dropout", 0.15, "Fraction of units randomly dropped on non-recurrent connections.")
 tf.app.flags.DEFINE_integer("batch_size", 100, "Batch size to use")
-tf.app.flags.DEFINE_integer("hidden_size", 100, "Size of the hidden states") # default 200
+tf.app.flags.DEFINE_integer("hidden_size", 75, "Size of the hidden states") # default 200
 tf.app.flags.DEFINE_integer("context_len", 400, "The maximum context length of your model") # default 600
 tf.app.flags.DEFINE_integer("question_len", 30, "The maximum question length of your model")
 tf.app.flags.DEFINE_integer("embedding_size", 100, "Size of the pretrained word vectors. This needs to be one of the available GloVe dimensions: 50/100/200/300")
@@ -59,7 +59,7 @@ tf.app.flags.DEFINE_integer("embedding_size", 100, "Size of the pretrained word 
 tf.app.flags.DEFINE_boolean("advanced_basic_attn", True, "Turn on advanced version of basic attention")
 tf.app.flags.DEFINE_boolean("advanced_dot_attn", True, "Turn on advanced version of dot attention")
 tf.app.flags.DEFINE_boolean("gated_reps", False, "Turn on gated representation")
-tf.app.flags.DEFINE_boolean("use_answer_pointer", True, "Turn on answer pointer network")
+tf.app.flags.DEFINE_boolean("use_answer_pointer", False, "Turn on answer pointer network")
 tf.app.flags.DEFINE_integer("n_encoder_layers", 1, "Number of layers for the encoder")
 tf.app.flags.DEFINE_boolean("use_cudnn_rnn", False, "Use cudnn version rnn")
 
