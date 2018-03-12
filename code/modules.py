@@ -31,14 +31,14 @@ class biRNN(object):
         self.hidden_size = hidden_size
         self.batch_size = batch_size
         self.keep_prob = keep_prob
-        # self.n_encoder_layers = n_encoder_layers # needs more investigation
+        self.n_encoder_layers = n_encoder_layers # needs more investigation
         self.use_cudnn = use_cudnn
 
         # differet in dropout
         if self.use_cudnn:
-            self.rnn_fw = tf.contrib.cudnn_rnn.CudnnGRU(num_layers = 1, 
+            self.rnn_fw = tf.contrib.cudnn_rnn.CudnnGRU(num_layers = self.n_encoder_layers, 
                           num_units = self.hidden_size, input_size = self.hidden_size)
-            self.rnn_bw = tf.contrib.cudnn_rnn.CudnnGRU(num_layers = 1, 
+            self.rnn_bw = tf.contrib.cudnn_rnn.CudnnGRU(num_layers = self.n_encoder_layers, 
                           num_units = self.hidden_size, input_size = self.hidden_size)
         else:
             """
@@ -52,11 +52,13 @@ class biRNN(object):
                                input_keep_prob = self.keep_prob)
             """
             self.single_cell_fw = lambda: tf.contrib.cudnn_rnn.CudnnCompatibleGRUCell(self.hidden_size)
-            self.rnn_cell_fw = tf.nn.rnn_cell.MultiRNNCell( [self.single_cell_fw() for _ in range(1)])
+            self.rnn_cell_fw = tf.nn.rnn_cell.MultiRNNCell( 
+                               [self.single_cell_fw() for _ in range(self.n_encoder_layers)])
             self.single_cell_bw = lambda: tf.contrib.cudnn_rnn.CudnnCompatibleGRUCell(self.hidden_size)
-            self.rnn_cell_bw = tf.nn.rnn_cell.MultiRNNCell( [self.single_cell_bw() for _ in range(1)])
+            self.rnn_cell_bw = tf.nn.rnn_cell.MultiRNNCell( 
+                               [self.single_cell_bw() for _ in range(self.n_encoder_layers)])
 
-    def build_graph(self, inputs, masks):
+    def build_graph(self, inputs, masks, init_fw, init_bw):
         """
         Inputs:
           inputs: (batch_size, seq_len, input_size)
@@ -97,8 +99,10 @@ class biRNN(object):
             else:
 
                 # each is shape (batch_size, seq_len, hidden_size).
-                (fw_out, bw_out), _ = tf.nn.bidirectional_dynamic_rnn(self.rnn_cell_fw, 
-                                      self.rnn_cell_bw, inputs, input_lens, dtype=tf.float32)
+                (fw_out, bw_out), (final_fw, final_bw) = tf.nn.bidirectional_dynamic_rnn(
+                                                         self.rnn_cell_fw, self.rnn_cell_bw, 
+                                                         inputs, input_lens, init_fw, init_bw, 
+                                                         dtype=tf.float32)
 
             # Concatenate the forward and backward hidden states
             out = tf.concat([fw_out, bw_out], 2)
@@ -106,7 +110,7 @@ class biRNN(object):
             # Apply dropout
             out = tf.nn.dropout(out, self.keep_prob)
 
-            return out
+            return out, final_fw, final_bw
 
 
 class uniRNN(object):

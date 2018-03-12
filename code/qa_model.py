@@ -133,16 +133,13 @@ class QAModel(object):
             These are the result of taking (masked) softmax of logits_start and logits_end.
         """
 
-        with vs.variable_scope("contextEncoder"):
-            encoderCtx = biRNN(self.FLAGS.hidden_size, self.FLAGS.batch_size, self.keep_prob, 
-                               self.FLAGS.n_encoder_layers, self.FLAGS.use_cudnn_rnn)
-            # (batch_size, context_len, hidden_size*2)
-            context_hiddens = encoderCtx.build_graph(self.context_embs, self.context_mask) 
-        with vs.variable_scope("questionEncoder"):
-            encoderQue = biRNN(self.FLAGS.hidden_size, self.FLAGS.batch_size, self.keep_prob, 
-                               self.FLAGS.n_encoder_layers, self.FLAGS.use_cudnn_rnn)
+        with vs.variable_scope("inputEncoder"):
+            inputEncoder = biRNN(self.FLAGS.hidden_size, self.FLAGS.batch_size, self.keep_prob, 
+                                 self.FLAGS.n_encoder_layers, self.FLAGS.use_cudnn_rnn)
             # (batch_size, question_len, hidden_size*2)
-            question_hiddens = encoderQue.build_graph(self.qn_embs, self.qn_mask) 
+            question_hiddens, final_fw, final_bw = inputEncoder.build_graph(self.qn_embs, self.qn_mask, None, None) 
+            # (batch_size, context_len, hidden_size*2)
+            context_hiddens, _, _ = inputEncoder.build_graph(self.context_embs, self.context_mask, final_fw, final_bw) 
 
         """
         # Use context hidden states to attend to question hidden states
@@ -192,7 +189,7 @@ class QAModel(object):
             selfAttnEncoder = biRNN(self.FLAGS.hidden_size * 16, self.FLAGS.batch_size, self.keep_prob, 
                                     1, self.FLAGS.use_cudnn_rnn)
             # (batch_size, question_len, hidden_size * 32)
-            rnn_dot_attn_reps = selfAttnEncoder.build_graph(gated_blended_reps, self.context_mask) 
+            rnn_dot_attn_reps, _, _ = selfAttnEncoder.build_graph(gated_blended_reps, self.context_mask, None, None) 
 
         if self.FLAGS.use_answer_pointer:
             pointer_layer_start = AnswerPointerLayerStart(self.keep_prob, self.FLAGS.hidden_size,
