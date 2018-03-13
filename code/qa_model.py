@@ -368,20 +368,22 @@ class QAModel(object):
                 if (i + j) < context_len:
                     mask[i][i+j] = 1
         
-        start_pos = []
-        end_pos = []
+        start_pos = np.zeros(shape=(batch_size), dtype = np.int32)
+        end_pos = np.zeros(shape=(batch_size), dtype = np.int32)
         for i in range(batch_size):
             a_start_dist = start_dist[i, :]
             a_end_dist = end_dist[i, :]
             prod = np.dot(np.expand_dims(a_start_dist, 1),
                           np.expand_dims(a_end_dist, 0))
             index = np.unravel_index(np.argmax(prod * mask, axis=None), prod.shape)
-            start_pos.append(index[0])
-            end_pos.append(index[1])
+            start_pos[i] = index[0]
+            end_pos[i] = index[1]
 
+        """
         # Take argmax to get start_pos and end_post, both shape (batch_size)
-        #start_pos = np.argmax(start_dist, axis=1)
-        #end_pos = np.argmax(end_dist, axis=1)
+        start_pos = np.argmax(start_dist, axis=1)
+        end_pos = np.argmax(end_dist, axis=1)
+        """
 
         return start_pos, end_pos
 
