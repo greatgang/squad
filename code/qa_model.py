@@ -359,9 +359,29 @@ class QAModel(object):
         # Get start_dist and end_dist, both shape (batch_size, context_len)
         start_dist, end_dist = self.get_prob_dists(session, batch)
 
+        batch_size = start_dist.shape[0]
+        context_len = start_dist.shape[1]
+
+        mask = np.zeros((context_len, context_len))
+        for i in range(context_len):
+            for j in range(10):
+                if (i + j) < context_len:
+                    mask[i][i+j] = 1
+        
+        start_pos = []
+        end_pos = []
+        for i in range(batch_size):
+            a_start_dist = start_dist[i, :]
+            a_end_dist = end_dist[i, :]
+            prod = np.dot(np.expand_dims(a_start_dist, 1),
+                          np.expand_dims(a_end_dist, 0))
+            index = np.unravel_index(np.argmax(prod * mask, axis=None), prod.shape)
+            start_pos.append(index[0])
+            end_pos.append(index[1])
+
         # Take argmax to get start_pos and end_post, both shape (batch_size)
-        start_pos = np.argmax(start_dist, axis=1)
-        end_pos = np.argmax(end_dist, axis=1)
+        #start_pos = np.argmax(start_dist, axis=1)
+        #end_pos = np.argmax(end_dist, axis=1)
 
         return start_pos, end_pos
 
@@ -446,8 +466,8 @@ class QAModel(object):
             pred_start_pos, pred_end_pos = self.get_start_end_pos(session, batch)
 
             # Convert the start and end positions to lists length batch_size
-            pred_start_pos = pred_start_pos.tolist() # list length batch_size
-            pred_end_pos = pred_end_pos.tolist() # list length batch_size
+            #pred_start_pos = pred_start_pos.tolist() # list length batch_size
+            #pred_end_pos = pred_end_pos.tolist() # list length batch_size
 
             for ex_idx, (pred_ans_start, pred_ans_end, true_ans_tokens) in enumerate(zip(pred_start_pos, pred_end_pos, batch.ans_tokens)):
                 example_num += 1
