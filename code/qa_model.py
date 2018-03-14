@@ -126,103 +126,107 @@ class QAModel(object):
 
     def build_graph(self):
 
-        """Builds the main part of the graph for the model, starting from the input embeddings to the final distributions for the answer span.
+        with tf.device('/device:GPU:0'):
 
-        Defines:
-          self.logits_start, self.logits_end: Both tensors shape (batch_size, context_len).
-            These are the logits (i.e. values that are fed into the softmax function) for the start and end distribution.
-            Important: these are -large in the pad locations. Necessary for when we feed into the cross entropy function.
-          self.probdist_start, self.probdist_end: Both shape (batch_size, context_len). Each row sums to 1.
-            These are the result of taking (masked) softmax of logits_start and logits_end.
-        """
-
-        with vs.variable_scope("inputEncoder"):
-            inputEncoder = biRNN(self.FLAGS.hidden_size, self.FLAGS.batch_size, self.keep_prob, 
-                                 self.FLAGS.n_encoder_layers, self.FLAGS.use_cudnn_rnn)
-            # (batch_size, question_len, hidden_size*2)
-            question_hiddens, final_fw, final_bw = inputEncoder.build_graph(self.qn_embs, self.qn_mask, None, None) 
-            # (batch_size, context_len, hidden_size*2)
-            context_hiddens, _, _ = inputEncoder.build_graph(self.context_embs, self.context_mask, final_fw, final_bw) 
-
-        """
-        # Use context hidden states to attend to question hidden states
-        basic_attn_layer = BasicAttn(self.keep_prob, self.FLAGS.hidden_size*2, self.FLAGS.hidden_size*2, self.FLAGS.advanced_basic_attn)
-        # attn_output is shape (batch_size, context_len, hidden_size*2)
-        _, basic_attn_output = basic_attn_layer.build_graph(question_hiddens, self.qn_mask, context_hiddens) 
-        """
-
-        bidaf_layer = biDAF(self.keep_prob, self.FLAGS.hidden_size*2)
-        # (batch_size, context_len, hidden_size*8)
-        bidaf_output = bidaf_layer.build_graph(question_hiddens, self.qn_mask, context_hiddens, self.context_mask) 
-
-        # Concat basic_attn_output to context_hiddens to get blended_reps0
-        # blended_reps0 = tf.concat([context_hiddens, basic_attn_output], axis=2) # (batch_size, context_len, hidden_size*4)
-
-        """
-        with vs.variable_scope("mutualAttnEncoder"):
-            mutualAttnEncoder = uniRNN(self.FLAGS.hidden_size * 8, self.FLAGS.batch_size, self.keep_prob, 
-                                       self.FLAGS.use_cudnn_rnn)
-            # (batch_size, context_len, hidden_size * 8)
-            rnn_basic_attn_reps = mutualAttnEncoder.build_graph(bidaf_output, self.context_mask) 
-        """
-        rnn_basic_attn_reps = bidaf_output 
+            """Builds the main part of the graph for the model, starting from the input embeddings to the final distributions for the answer span.
     
-        # Gang: adding self attention (R-NET)
-        # self_attn_layer = SelfAttn(self.keep_prob, self.FLAGS.hidden_size*4)
-        # # (batch_size, context_len, hidden_size*4)
-        # _, self_attn_output = self_attn_layer.build_graph(basic_attn_output, self.context_mask) 
-
-        # Gang: adding dot attention (Attention Is All You Need)
-        dot_attn_layer = DotAttn(self.keep_prob, self.FLAGS.hidden_size*8, self.FLAGS.advanced_dot_attn)
-        # (batch_size, context_len, hidden_size * 8)
-        _, dot_attn_output = dot_attn_layer.build_graph(rnn_basic_attn_reps, self.context_mask) 
+            Defines:
+              self.logits_start, self.logits_end: Both tensors shape (batch_size, context_len).
+                These are the logits (i.e. values that are fed into the softmax function) for the start and end distribution.
+                Important: these are -large in the pad locations. Necessary for when we feed into the cross entropy function.
+              self.probdist_start, self.probdist_end: Both shape (batch_size, context_len). Each row sums to 1.
+                These are the result of taking (masked) softmax of logits_start and logits_end.
+            """
+    
+            with vs.variable_scope("inputEncoder"):
+                inputEncoder = biRNN(self.FLAGS.hidden_size, self.FLAGS.batch_size, self.keep_prob, 
+                                     self.FLAGS.n_encoder_layers, self.FLAGS.use_cudnn_rnn)
+                # (batch_size, question_len, hidden_size*2)
+                question_hiddens, final_fw, final_bw = inputEncoder.build_graph(self.qn_embs, self.qn_mask, None, None) 
+                # (batch_size, context_len, hidden_size*2)
+                context_hiddens, _, _ = inputEncoder.build_graph(self.context_embs, self.context_mask, final_fw, final_bw) 
+    
+            """
+            # Use context hidden states to attend to question hidden states
+            basic_attn_layer = BasicAttn(self.keep_prob, self.FLAGS.hidden_size*2, self.FLAGS.hidden_size*2, self.FLAGS.advanced_basic_attn)
+            # attn_output is shape (batch_size, context_len, hidden_size*2)
+            _, basic_attn_output = basic_attn_layer.build_graph(question_hiddens, self.qn_mask, context_hiddens) 
+            """
+    
+            bidaf_layer = biDAF(self.keep_prob, self.FLAGS.hidden_size*2)
+            # (batch_size, context_len, hidden_size*8)
+            bidaf_output = bidaf_layer.build_graph(question_hiddens, self.qn_mask, context_hiddens, self.context_mask) 
+    
+            # Concat basic_attn_output to context_hiddens to get blended_reps0
+            # blended_reps0 = tf.concat([context_hiddens, basic_attn_output], axis=2) # (batch_size, context_len, hidden_size*4)
+    
+            """
+            with vs.variable_scope("mutualAttnEncoder"):
+                mutualAttnEncoder = uniRNN(self.FLAGS.hidden_size * 8, self.FLAGS.batch_size, self.keep_prob, 
+                                           self.FLAGS.use_cudnn_rnn)
+                # (batch_size, context_len, hidden_size * 8)
+                rnn_basic_attn_reps = mutualAttnEncoder.build_graph(bidaf_output, self.context_mask) 
+            """
+            rnn_basic_attn_reps = bidaf_output 
         
-        # Concat dot_attn_output to blended_reps0 to get blended_reps1
-        # (batch_size, context_len, hidden_size * 16)
-        blended_reps1 = tf.concat([rnn_basic_attn_reps, dot_attn_output], axis=2) 
-
-        # Gang: adding gated representation (R-NET)
-        if self.FLAGS.gated_reps:
-            gated_reps_layer = GatedReps(self.FLAGS.hidden_size * 16)
-            gated_blended_reps = gated_reps_layer.build_graph(blended_reps1)
-        else:
-            gated_blended_reps = blended_reps1
-
-        with vs.variable_scope("selfAttnEncoder"):
-            selfAttnEncoder = biRNN(self.FLAGS.hidden_size * 16, self.FLAGS.batch_size, self.keep_prob, 
-                                    1, self.FLAGS.use_cudnn_rnn)
-            # (batch_size, question_len, hidden_size * 32)
-            rnn_dot_attn_reps, _, _ = selfAttnEncoder.build_graph(gated_blended_reps, self.context_mask, None, None) 
-
-        if self.FLAGS.use_answer_pointer:
-            pointer_layer_start = AnswerPointerLayerStart(self.keep_prob, self.FLAGS.hidden_size,
-                                  self.FLAGS.hidden_size*32)
-            rQ, self.logits_start, self.probdist_start = pointer_layer_start.build_graph(
-                                                         question_hiddens, self.qn_mask, 
-                                                         rnn_dot_attn_reps, self.context_mask)
-
-            pointer_layer_end = AnswerPointerLayerEnd(self.keep_prob, self.FLAGS.hidden_size, 
-                                self.FLAGS.hidden_size*32)
-            self.logits_end, self.probdist_end = pointer_layer_end.build_graph(self.probdist_start, rQ, 
-                                                 rnn_dot_attn_reps, self.context_mask)
-        else:
-            # Apply fully connected layer to each blended representation
-            # Note, blended_reps_final corresponds to b' in the handout
-            # Note, tf.contrib.layers.fully_connected applies a ReLU non-linarity here by default
-            # blended_reps_final is shape (batch_size, context_len, hidden_size)
-            blended_reps_final = tf.contrib.layers.fully_connected(rnn_dot_attn_reps, num_outputs=self.FLAGS.hidden_size) 
-
-            # Use softmax layer to compute probability distribution for start location
-            # Note this produces self.logits_start and self.probdist_start, both of which have shape (batch_size, context_len)
-            with vs.variable_scope("StartDist"):
-                softmax_layer_start = SimpleSoftmaxLayer()
-                self.logits_start, self.probdist_start = softmax_layer_start.build_graph(blended_reps_final, self.context_mask)
+            # Gang: adding self attention (R-NET)
+            # self_attn_layer = SelfAttn(self.keep_prob, self.FLAGS.hidden_size*4)
+            # # (batch_size, context_len, hidden_size*4)
+            # _, self_attn_output = self_attn_layer.build_graph(basic_attn_output, self.context_mask) 
     
-            # Use softmax layer to compute probability distribution for end location
-            # Note this produces self.logits_end and self.probdist_end, both of which have shape (batch_size, context_len)
-            with vs.variable_scope("EndDist"):
-                softmax_layer_end = SimpleSoftmaxLayer()
-                self.logits_end, self.probdist_end = softmax_layer_end.build_graph(blended_reps_final, self.context_mask)
+            # Gang: adding dot attention (Attention Is All You Need)
+            dot_attn_layer = DotAttn(self.keep_prob, self.FLAGS.hidden_size*8, self.FLAGS.advanced_dot_attn)
+            # (batch_size, context_len, hidden_size * 8)
+            _, dot_attn_output = dot_attn_layer.build_graph(rnn_basic_attn_reps, self.context_mask) 
+            
+            # Concat dot_attn_output to blended_reps0 to get blended_reps1
+            # (batch_size, context_len, hidden_size * 16)
+            blended_reps1 = tf.concat([rnn_basic_attn_reps, dot_attn_output], axis=2) 
+    
+            # Gang: adding gated representation (R-NET)
+            if self.FLAGS.gated_reps:
+                gated_reps_layer = GatedReps(self.FLAGS.hidden_size * 16)
+                gated_blended_reps = gated_reps_layer.build_graph(blended_reps1)
+            else:
+                gated_blended_reps = blended_reps1
+
+        with tf.device('/device:GPU:1'):
+
+            with vs.variable_scope("selfAttnEncoder"):
+                selfAttnEncoder = biRNN(self.FLAGS.hidden_size * 16, self.FLAGS.batch_size, self.keep_prob, 
+                                        1, self.FLAGS.use_cudnn_rnn)
+                # (batch_size, question_len, hidden_size * 32)
+                rnn_dot_attn_reps, _, _ = selfAttnEncoder.build_graph(gated_blended_reps, self.context_mask, None, None) 
+    
+            if self.FLAGS.use_answer_pointer:
+                pointer_layer_start = AnswerPointerLayerStart(self.keep_prob, self.FLAGS.hidden_size,
+                                      self.FLAGS.hidden_size*32)
+                rQ, self.logits_start, self.probdist_start = pointer_layer_start.build_graph(
+                                                             question_hiddens, self.qn_mask, 
+                                                             rnn_dot_attn_reps, self.context_mask)
+    
+                pointer_layer_end = AnswerPointerLayerEnd(self.keep_prob, self.FLAGS.hidden_size, 
+                                    self.FLAGS.hidden_size*32)
+                self.logits_end, self.probdist_end = pointer_layer_end.build_graph(self.probdist_start, rQ, 
+                                                     rnn_dot_attn_reps, self.context_mask)
+            else:
+                # Apply fully connected layer to each blended representation
+                # Note, blended_reps_final corresponds to b' in the handout
+                # Note, tf.contrib.layers.fully_connected applies a ReLU non-linarity here by default
+                # blended_reps_final is shape (batch_size, context_len, hidden_size)
+                blended_reps_final = tf.contrib.layers.fully_connected(rnn_dot_attn_reps, num_outputs=self.FLAGS.hidden_size) 
+    
+                # Use softmax layer to compute probability distribution for start location
+                # Note this produces self.logits_start and self.probdist_start, both of which have shape (batch_size, context_len)
+                with vs.variable_scope("StartDist"):
+                    softmax_layer_start = SimpleSoftmaxLayer()
+                    self.logits_start, self.probdist_start = softmax_layer_start.build_graph(blended_reps_final, self.context_mask)
+        
+                # Use softmax layer to compute probability distribution for end location
+                # Note this produces self.logits_end and self.probdist_end, both of which have shape (batch_size, context_len)
+                with vs.variable_scope("EndDist"):
+                    softmax_layer_end = SimpleSoftmaxLayer()
+                    self.logits_end, self.probdist_end = softmax_layer_end.build_graph(blended_reps_final, self.context_mask)
 
 
     def add_loss(self):

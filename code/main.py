@@ -79,8 +79,8 @@ tf.app.flags.DEFINE_string("json_out_path", "predictions.json", "Output path for
 
 
 FLAGS = tf.app.flags.FLAGS
-os.environ["CUDA_VISIBLE_DEVICES"] = str(FLAGS.gpu)
-#os.environ["CUDA_VISIBLE_DEVICES"] = str('0, 1')
+#os.environ["CUDA_VISIBLE_DEVICES"] = str(FLAGS.gpu)
+os.environ["CUDA_VISIBLE_DEVICES"] = str('0, 1')
 
 
 def initialize_model(session, model, train_dir, expect_exists):
@@ -148,7 +148,8 @@ def main(unused_argv):
     qa_model = QAModel(FLAGS, id2word, word2id, emb_matrix)
 
     # Some GPU settings
-    config=tf.ConfigProto()
+    #config = tf.ConfigProto(log_device_placement=True, allow_soft_placement=True)
+    config = tf.ConfigProto(allow_soft_placement=True)
     config.gpu_options.allow_growth = True
 
     # Split by mode
