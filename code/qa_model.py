@@ -56,11 +56,12 @@ class QAModel(object):
         self.FLAGS = FLAGS
         self.id2word = id2word
         self.word2id = word2id
+        self.emb = emb_matrix
 
         # Add all parts of the graph
         with tf.variable_scope("QAModel", initializer=tf.contrib.layers.variance_scaling_initializer(factor=1.0, uniform=True)):
             self.add_placeholders()
-            self.add_embedding_layer(emb_matrix)
+            self.add_embedding_layer()
             self.build_graph()
             self.add_loss()
 
@@ -100,9 +101,10 @@ class QAModel(object):
         # Add a placeholder to feed in the keep probability (for dropout).
         # This is necessary so that we can instruct the model to use dropout when training, but not when testing
         self.keep_prob = tf.placeholder_with_default(1.0, shape=())
+        self.emb_ph = tf.placeholder(tf.float32, shape=[self.emb.shape[0], self.emb.shape[1]])
 
 
-    def add_embedding_layer(self, emb_matrix):
+    def add_embedding_layer(self):
         """
         Adds word embedding layer to the graph.
 
@@ -113,7 +115,8 @@ class QAModel(object):
         with vs.variable_scope("embeddings"):
 
             # Note: the embedding matrix is a tf.constant which means it's not a trainable parameter
-            embedding_matrix = tf.constant(emb_matrix, dtype=tf.float32, name="emb_matrix") # shape (400002, embedding_size)
+            #embedding_matrix = tf.constant(emb_matrix, dtype=tf.float32, name="emb_matrix") # shape (400002, embedding_size)
+            embedding_matrix = self.emb_ph
 
             # Get the word embeddings for the context and question,
             # using the placeholders self.context_ids and self.qn_ids
@@ -281,6 +284,7 @@ class QAModel(object):
         input_feed[self.qn_mask] = batch.qn_mask
         input_feed[self.ans_span] = batch.ans_span
         input_feed[self.keep_prob] = 1.0 - self.FLAGS.dropout # apply dropout
+        input_feed[self.emb_ph] = self.emb
 
         # output_feed contains the things we want to fetch.
         output_feed = [self.updates, self.summaries, self.loss, self.global_step, self.param_norm, self.gradient_norm]
@@ -359,6 +363,7 @@ class QAModel(object):
         # Get start_dist and end_dist, both shape (batch_size, context_len)
         start_dist, end_dist = self.get_prob_dists(session, batch)
 
+        """
         batch_size = start_dist.shape[0]
         context_len = start_dist.shape[1]
 
@@ -378,12 +383,11 @@ class QAModel(object):
             index = np.unravel_index(np.argmax(prod * mask, axis=None), prod.shape)
             start_pos[i] = index[0]
             end_pos[i] = index[1]
-
         """
+
         # Take argmax to get start_pos and end_post, both shape (batch_size)
         start_pos = np.argmax(start_dist, axis=1)
         end_pos = np.argmax(end_dist, axis=1)
-        """
 
         return start_pos, end_pos
 
