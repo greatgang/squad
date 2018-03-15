@@ -262,6 +262,11 @@ class QAModel(object):
 
             # Add the two losses
             self.loss = self.loss_start + self.loss_end
+
+            if self.FLAGS.reg_ratio > 0.0:
+                r = self.FLAGS.reg_ratio
+                self.loss += r * tf.add_n([ tf.nn.l2_loss(v) for v in tf.trainable_variables() if 'bias' not in v.name])
+
             tf.summary.scalar('loss', self.loss)
 
 

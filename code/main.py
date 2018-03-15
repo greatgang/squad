@@ -62,6 +62,7 @@ tf.app.flags.DEFINE_boolean("gated_reps", False, "Turn on gated representation")
 tf.app.flags.DEFINE_boolean("use_answer_pointer", False, "Turn on answer pointer network")
 tf.app.flags.DEFINE_integer("n_encoder_layers", 1, "Number of layers for the encoder")
 tf.app.flags.DEFINE_boolean("use_cudnn_rnn", False, "Use cudnn version rnn")
+tf.app.flags.DEFINE_float("reg_ratio", 0.00001, "Regularization ratio")
 
 # How often to print, save, eval
 tf.app.flags.DEFINE_integer("print_every", 1, "How many iterations to do per print.")
