@@ -321,6 +321,7 @@ class QAModel(object):
         input_feed[self.qn_mask] = batch.qn_mask
         input_feed[self.ans_span] = batch.ans_span
         # note you don't supply keep_prob here, so it will default to 1 i.e. no dropout
+        input_feed[self.emb_ph] = self.emb
 
         output_feed = [self.loss]
 
@@ -346,6 +347,7 @@ class QAModel(object):
         input_feed[self.qn_ids] = batch.qn_ids
         input_feed[self.qn_mask] = batch.qn_mask
         # note you don't supply keep_prob here, so it will default to 1 i.e. no dropout
+        input_feed[self.emb_ph] = self.emb
 
         output_feed = [self.probdist_start, self.probdist_end]
         [probdist_start, probdist_end] = session.run(output_feed, input_feed)
@@ -367,7 +369,6 @@ class QAModel(object):
         # Get start_dist and end_dist, both shape (batch_size, context_len)
         start_dist, end_dist = self.get_prob_dists(session, batch)
 
-        """
         batch_size = start_dist.shape[0]
         context_len = start_dist.shape[1]
 
@@ -387,11 +388,10 @@ class QAModel(object):
             index = np.unravel_index(np.argmax(prod * mask, axis=None), prod.shape)
             start_pos[i] = index[0]
             end_pos[i] = index[1]
-        """
 
         # Take argmax to get start_pos and end_post, both shape (batch_size)
-        start_pos = np.argmax(start_dist, axis=1)
-        end_pos = np.argmax(end_dist, axis=1)
+        #start_pos = np.argmax(start_dist, axis=1)
+        #end_pos = np.argmax(end_dist, axis=1)
 
         return start_pos, end_pos
 
