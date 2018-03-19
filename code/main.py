@@ -141,9 +141,11 @@ def main(unused_argv):
     train_context_path = os.path.join(FLAGS.data_dir, "train.context")
     train_qn_path = os.path.join(FLAGS.data_dir, "train.question")
     train_ans_path = os.path.join(FLAGS.data_dir, "train.span")
+    train_feature_path = os.path.join(FLAGS.data_dir, "train.feature")
     dev_context_path = os.path.join(FLAGS.data_dir, "dev.context")
     dev_qn_path = os.path.join(FLAGS.data_dir, "dev.question")
     dev_ans_path = os.path.join(FLAGS.data_dir, "dev.span")
+    dev_feature_path = os.path.join(FLAGS.data_dir, "dev.feature")
 
     # Initialize model
     qa_model = QAModel(FLAGS, id2word, word2id, emb_matrix)
@@ -176,7 +178,7 @@ def main(unused_argv):
             initialize_model(sess, qa_model, FLAGS.train_dir, expect_exists=False)
 
             # Train
-            qa_model.train(sess, train_context_path, train_qn_path, train_ans_path, dev_qn_path, dev_context_path, dev_ans_path)
+            qa_model.train(sess, train_context_path, train_qn_path, train_ans_path, train_feature_path, dev_qn_path, dev_context_path, dev_ans_path, dev_feature_path)
 
 
     elif FLAGS.mode == "show_examples":
@@ -186,7 +188,7 @@ def main(unused_argv):
             initialize_model(sess, qa_model, bestmodel_dir, expect_exists=True)
 
             # Show examples with F1/EM scores
-            _, _ = qa_model.check_f1_em(sess, dev_context_path, dev_qn_path, dev_ans_path, "dev", num_samples=10, print_to_screen=True)
+            _, _ = qa_model.check_f1_em(sess, dev_context_path, dev_qn_path, dev_ans_path, dev_feature_path, "dev", num_samples=10, print_to_screen=True)
 
 
     elif FLAGS.mode == "official_eval":
@@ -196,7 +198,7 @@ def main(unused_argv):
             raise Exception("For official_eval mode, you need to specify --ckpt_load_dir")
 
         # Read the JSON data from file
-        qn_uuid_data, context_token_data, qn_token_data = get_json_data(FLAGS.json_in_path)
+        qn_uuid_data, context_token_data, qn_token_data, feature_token_data = get_json_data(FLAGS.json_in_path)
 
         with tf.Session(config=config) as sess:
 
@@ -205,7 +207,7 @@ def main(unused_argv):
 
             # Get a predicted answer for each example in the data
             # Return a mapping answers_dict from uuid to answer
-            answers_dict = generate_answers(sess, qa_model, word2id, qn_uuid_data, context_token_data, qn_token_data)
+            answers_dict = generate_answers(sess, qa_model, word2id, qn_uuid_data, context_token_data, qn_token_data, feature_token_data)
 
             # Write the uuid->answer mapping a to json file in root dir
             print "Writing predictions to %s..." % FLAGS.json_out_path

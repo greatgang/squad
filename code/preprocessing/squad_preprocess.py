@@ -54,6 +54,11 @@ def tokenize(sequence):
     return tokens
 
 
+def tokenizeOri(sequence):
+    tokens = [token.replace("``", '"').replace("''", '"') for token in nltk.word_tokenize(sequence)]
+    return tokens
+
+
 def total_exs(dataset):
     """
     Returns the total number of (context, question, answer) triples,
@@ -155,7 +160,7 @@ def preprocess_and_write(dataset, tier, out_dir):
     spans are given in terms of characters, some examples are discarded because
     we cannot get a clean span in terms of tokens.
 
-    This function produces the {train/dev}.{context/question/answer/span} files.
+    This function produces the {train/dev}.{context/question/answer/span/feature} files.
 
     Inputs:
       dataset: read from JSON
@@ -182,6 +187,8 @@ def preprocess_and_write(dataset, tier, out_dir):
             context = context.replace("``", '" ')
 
             context_tokens = tokenize(context) # list of strings (lowercase)
+            context_tokens_ori = tokenizeOri(context) # list of strings (original case)
+
             context = context.lower()
 
             qas = article_paragraphs[pid]['qas'] # list of questions
@@ -198,6 +205,7 @@ def preprocess_and_write(dataset, tier, out_dir):
                 # read the question text and tokenize
                 question = unicode(qn['question']) # string
                 question_tokens = tokenize(question) # list of strings
+                question_tokens_ori = tokenizeOri(question) # list of strings
 
                 # of the three answers, just take the first
                 ans_text = unicode(qn['answers'][0]['text']).lower() # get the answer text
@@ -226,7 +234,19 @@ def preprocess_and_write(dataset, tier, out_dir):
                     num_tokenprob += 1
                     continue # skip this question/answer pair
 
-                examples.append((' '.join(context_tokens), ' '.join(question_tokens), ' '.join(ans_tokens), ' '.join([str(ans_start_wordloc), str(ans_end_wordloc)])))
+                question_tokens_set = set(question_tokens)
+                question_tokens_ori_set = set(question_tokens_ori)
+
+                feature_tokens = []
+                for i in range(len(context_tokens)):
+                    feature_id = 0
+                    if context_tokens[i] in question_tokens_set:
+                        feature_id += 1
+                    if context_tokens_ori[i] in question_tokens_ori_set:
+                        feature_id += 2
+                    feature_tokens.append(str(feature_id))
+
+                examples.append((' '.join(context_tokens), ' '.join(question_tokens), ' '.join(ans_tokens), ' '.join([str(ans_start_wordloc), str(ans_end_wordloc)]), ' '.join(feature_tokens)))
 
                 num_exs += 1
 
@@ -242,16 +262,18 @@ def preprocess_and_write(dataset, tier, out_dir):
     with open(os.path.join(out_dir, tier +'.context'), 'w') as context_file,  \
          open(os.path.join(out_dir, tier +'.question'), 'w') as question_file,\
          open(os.path.join(out_dir, tier +'.answer'), 'w') as ans_text_file, \
-         open(os.path.join(out_dir, tier +'.span'), 'w') as span_file:
+         open(os.path.join(out_dir, tier +'.span'), 'w') as span_file,\
+         open(os.path.join(out_dir, tier +'.feature'), 'w') as feature_file:
 
         for i in indices:
-            (context, question, answer, answer_span) = examples[i]
+            (context, question, answer, answer_span, context_feature) = examples[i]
 
             # write tokenized data to file
             write_to_file(context_file, context)
             write_to_file(question_file, question)
             write_to_file(ans_text_file, answer)
             write_to_file(span_file, answer_span)
+            write_to_file(feature_file, context_feature)
 
 
 def main():

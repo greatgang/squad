@@ -25,7 +25,7 @@ import numpy as np
 from six.moves import xrange
 from nltk.tokenize.moses import MosesDetokenizer
 
-from preprocessing.squad_preprocess import data_from_json, tokenize
+from preprocessing.squad_preprocess import data_from_json, tokenize, tokenizeOri
 from vocab import UNK_ID, PAD_ID
 from data_batcher import padded, Batch
 
@@ -40,7 +40,7 @@ def readnext(x):
 
 
 
-def refill_batches(batches, word2id, qn_uuid_data, context_token_data, qn_token_data, batch_size, context_len, question_len):
+def refill_batches(batches, word2id, qn_uuid_data, context_token_data, qn_token_data, feature_token_data, batch_size, context_len, question_len):
     """
     This is similar to refill_batches in data_batcher.py, but:
       (1) instead of reading from (preprocessed) datafiles, it reads from the provided lists
@@ -60,13 +60,14 @@ def refill_batches(batches, word2id, qn_uuid_data, context_token_data, qn_token_
     examples = []
 
     # Get next example
-    qn_uuid, context_tokens, qn_tokens = readnext(qn_uuid_data), readnext(context_token_data), readnext(qn_token_data)
+    qn_uuid, context_tokens, qn_tokens, feature_tokens = readnext(qn_uuid_data), readnext(context_token_data), readnext(qn_token_data), readnext(feature_token_data)
 
-    while qn_uuid and context_tokens and qn_tokens:
+    while qn_uuid and context_tokens and qn_tokens and feature_tokens:
 
         # Convert context_tokens and qn_tokens to context_ids and qn_ids
         context_ids = [word2id.get(w, UNK_ID) for w in context_tokens]
         qn_ids = [word2id.get(w, UNK_ID) for w in qn_tokens]
+        feature_ids = split_by_whitespace(feature_line) # list of strings
 
         # Truncate context_ids and qn_ids
         # Note: truncating context_ids may truncate the correct answer, meaning that it's impossible for your model to get the correct answer on this example!
@@ -76,26 +77,26 @@ def refill_batches(batches, word2id, qn_uuid_data, context_token_data, qn_token_
             context_ids = context_ids[:context_len]
 
         # Add to list of examples
-        examples.append((qn_uuid, context_tokens, context_ids, qn_ids))
+        examples.append((qn_uuid, context_tokens, context_ids, qn_ids, feature_ids))
 
         # Stop if you've got a batch
         if len(examples) == batch_size:
             break
 
         # Get next example
-        qn_uuid, context_tokens, qn_tokens = readnext(qn_uuid_data), readnext(context_token_data), readnext(qn_token_data)
+        qn_uuid, context_tokens, qn_tokens, feature_tokens = readnext(qn_uuid_data), readnext(context_token_data), readnext(qn_token_data), readnext(feature_token_data)
 
     # Make into batches
     for batch_start in xrange(0, len(examples), batch_size):
-        uuids_batch, context_tokens_batch, context_ids_batch, qn_ids_batch = zip(*examples[batch_start:batch_start + batch_size])
+        uuids_batch, context_tokens_batch, context_ids_batch, qn_ids_batch, feature_ids_batch = zip(*examples[batch_start:batch_start + batch_size])
 
-        batches.append((uuids_batch, context_tokens_batch, context_ids_batch, qn_ids_batch))
+        batches.append((uuids_batch, context_tokens_batch, context_ids_batch, qn_ids_batch, feature_ids_batch))
 
     return
 
 
 
-def get_batch_generator(word2id, qn_uuid_data, context_token_data, qn_token_data, batch_size, context_len, question_len):
+def get_batch_generator(word2id, qn_uuid_data, context_token_data, qn_token_data, feature_token_data, batch_size, context_len, question_len):
     """
     This is similar to get_batch_generator in data_batcher.py, but with some
     differences (see explanation in refill_batches).
@@ -114,16 +115,17 @@ def get_batch_generator(word2id, qn_uuid_data, context_token_data, qn_token_data
 
     while True:
         if len(batches) == 0:
-            refill_batches(batches, word2id, qn_uuid_data, context_token_data, qn_token_data, batch_size, context_len, question_len)
+            refill_batches(batches, word2id, qn_uuid_data, context_token_data, qn_token_data, feature_token_data, batch_size, context_len, question_len)
         if len(batches) == 0:
             break
 
         # Get next batch. These are all lists length batch_size
-        (uuids, context_tokens, context_ids, qn_ids) = batches.pop(0)
+        (uuids, context_tokens, context_ids, qn_ids, feature_ids) = batches.pop(0)
 
         # Pad context_ids and qn_ids
         qn_ids = padded(qn_ids, question_len) # pad questions to length question_len
         context_ids = padded(context_ids, context_len) # pad contexts to length context_len
+        feature_ids = padded(feature_ids, context_len) # pad features to length context_len
 
         # Make qn_ids into a np array and create qn_mask
         qn_ids = np.array(qn_ids)
@@ -134,7 +136,7 @@ def get_batch_generator(word2id, qn_uuid_data, context_token_data, qn_token_data
         context_mask = (context_ids != PAD_ID).astype(np.int32)
 
         # Make into a Batch object
-        batch = Batch(context_ids, context_mask, context_tokens, qn_ids, qn_mask, qn_tokens=None, ans_span=None, ans_tokens=None, uuids=uuids)
+        batch = Batch(context_ids, context_mask, context_tokens, qn_ids, qn_mask, qn_tokens=None, ans_span=None, ans_tokens=None, feature_ids=feature_ids, uuids=uuids)
 
         yield batch
 
@@ -159,6 +161,7 @@ def preprocess_dataset(dataset):
     qn_uuid_data = []
     context_token_data = []
     qn_token_data = []
+    feature_token_data = []
 
     for articles_id in tqdm(range(len(dataset['data'])), desc="Preprocessing data"):
         article_paragraphs = dataset['data'][articles_id]['paragraphs']
@@ -172,6 +175,7 @@ def preprocess_dataset(dataset):
             context = context.replace("``", '" ')
 
             context_tokens = tokenize(context) # list of strings (lowercase)
+            context_tokens_ori = tokenizeOri(context) # list of strings (original case)
             context = context.lower()
 
             qas = article_paragraphs[pid]['qas'] # list of questions
@@ -182,6 +186,7 @@ def preprocess_dataset(dataset):
                 # read the question text and tokenize
                 question = unicode(qn['question']) # string
                 question_tokens = tokenize(question) # list of strings
+                question_tokens_ori = tokenizeOri(question) # list of strings
 
                 # also get the question_uuid
                 question_uuid = qn['id']
@@ -191,7 +196,18 @@ def preprocess_dataset(dataset):
                 context_token_data.append(context_tokens)
                 qn_token_data.append(question_tokens)
 
-    return qn_uuid_data, context_token_data, qn_token_data
+                question_tokens_set = set(question_tokens)
+                question_tokens_ori_set = set(question_tokens_ori)
+
+                for i in range(len(context_tokens)):
+                    feature_id = 0
+                    if context_tokens[i] in question_tokens_set:
+                        feature_id += 1
+                    if context_tokens_ori[i] in question_tokens_ori_set:
+                        feature_id += 2
+                    feature_token_data.append(str(feature_id))
+
+    return qn_uuid_data, context_token_data, qn_token_data, feature_token_data
 
 
 def get_json_data(data_filename):
@@ -212,17 +228,18 @@ def get_json_data(data_filename):
 
     # Get the tokenized contexts and questions, and unique question identifiers
     print "Preprocessing data from %s..." % data_filename
-    qn_uuid_data, context_token_data, qn_token_data = preprocess_dataset(data)
+    qn_uuid_data, context_token_data, qn_token_data, feature_token_data = preprocess_dataset(data)
 
     data_size = len(qn_uuid_data)
     assert len(context_token_data) == data_size
     assert len(qn_token_data) == data_size
+    assert len(feature_token_data) == data_size
     print "Finished preprocessing. Got %i examples from %s" % (data_size, data_filename)
 
-    return qn_uuid_data, context_token_data, qn_token_data
+    return qn_uuid_data, context_token_data, qn_token_data, feature_token_data
 
 
-def generate_answers(session, model, word2id, qn_uuid_data, context_token_data, qn_token_data):
+def generate_answers(session, model, word2id, qn_uuid_data, context_token_data, qn_token_data, feature_token_data):
     """
     Given a model, and a set of (context, question) pairs, each with a unique ID,
     use the model to generate an answer for each pair, and return a dictionary mapping
@@ -245,7 +262,7 @@ def generate_answers(session, model, word2id, qn_uuid_data, context_token_data, 
 
     print "Generating answers..."
 
-    for batch in get_batch_generator(word2id, qn_uuid_data, context_token_data, qn_token_data, model.FLAGS.batch_size, model.FLAGS.context_len, model.FLAGS.question_len):
+    for batch in get_batch_generator(word2id, qn_uuid_data, context_token_data, qn_token_data, feature_token_data, model.FLAGS.batch_size, model.FLAGS.context_len, model.FLAGS.question_len):
 
         # Get the predicted spans
         pred_start_batch, pred_end_batch = model.get_start_end_pos(session, batch)

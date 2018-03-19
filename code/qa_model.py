@@ -97,6 +97,7 @@ class QAModel(object):
         self.qn_ids = tf.placeholder(tf.int32, shape=[None, self.FLAGS.question_len])
         self.qn_mask = tf.placeholder(tf.int32, shape=[None, self.FLAGS.question_len])
         self.ans_span = tf.placeholder(tf.int32, shape=[None, 2])
+        self.feature_ids = tf.placeholder(tf.int32, shape=[None, self.FLAGS.context_len])
 
         # Add a placeholder to feed in the keep probability (for dropout).
         # This is necessary so that we can instruct the model to use dropout when training, but not when testing
@@ -120,9 +121,26 @@ class QAModel(object):
 
             # Get the word embeddings for the context and question,
             # using the placeholders self.context_ids and self.qn_ids
-            self.context_embs = embedding_ops.embedding_lookup(embedding_matrix, self.context_ids) # shape (batch_size, context_len, embedding_size)
-            self.qn_embs = embedding_ops.embedding_lookup(embedding_matrix, self.qn_ids) # shape (batch_size, question_len, embedding_size)
 
+            # shape (batch_size, context_len, embedding_size)
+            self.context_embs = embedding_ops.embedding_lookup(embedding_matrix, self.context_ids) 
+            # shape (batch_size, question_len, embedding_size)
+            self.qn_embs = embedding_ops.embedding_lookup(embedding_matrix, self.qn_ids) 
+
+            #context_pad = tf.constant(0, shape = [1, self.FLAGS.context_len, 3], dtype = tf.float32)
+            #context_pad = tf.tile(context_pad, [tf.shape(self.context_embs)[0], 1, 1])
+            feature_id_map = tf.constant([[0, 0, 0], [0, 0, 1], [0, 1, 0], [0, 1, 1]], 
+                             dtype = tf.float32)
+            #print "feature_id_map shape: " + str(feature_id_map.get_shape())
+            context_pad = tf.gather(feature_id_map, self.feature_ids)
+            #print "context_pad shape: " + str(context_pad.get_shape())
+
+            qn_pad = tf.constant(0, shape = [1, self.FLAGS.question_len, 3], dtype = tf.float32)
+            qn_pad = tf.tile(qn_pad, [tf.shape(self.qn_embs)[0], 1, 1])
+
+            self.context_embs = tf.concat([self.context_embs, context_pad], axis=2) 
+            #print "context_embs shape: " + str(self.context_embs.get_shape())
+            self.qn_embs = tf.concat([self.qn_embs, qn_pad], axis=2) 
 
     def build_graph(self):
 
@@ -292,6 +310,7 @@ class QAModel(object):
         input_feed[self.qn_ids] = batch.qn_ids
         input_feed[self.qn_mask] = batch.qn_mask
         input_feed[self.ans_span] = batch.ans_span
+        input_feed[self.feature_ids] = batch.feature_ids
         input_feed[self.keep_prob] = 1.0 - self.FLAGS.dropout # apply dropout
         input_feed[self.emb_ph] = self.emb
 
@@ -325,6 +344,7 @@ class QAModel(object):
         input_feed[self.qn_ids] = batch.qn_ids
         input_feed[self.qn_mask] = batch.qn_mask
         input_feed[self.ans_span] = batch.ans_span
+        input_feed[self.feature_ids] = batch.feature_ids
         # note you don't supply keep_prob here, so it will default to 1 i.e. no dropout
         input_feed[self.emb_ph] = self.emb
 
@@ -351,6 +371,7 @@ class QAModel(object):
         input_feed[self.context_mask] = batch.context_mask
         input_feed[self.qn_ids] = batch.qn_ids
         input_feed[self.qn_mask] = batch.qn_mask
+        input_feed[self.feature_ids] = batch.feature_ids
         # note you don't supply keep_prob here, so it will default to 1 i.e. no dropout
         input_feed[self.emb_ph] = self.emb
 
@@ -401,7 +422,7 @@ class QAModel(object):
         return start_pos, end_pos
 
 
-    def get_dev_loss(self, session, dev_context_path, dev_qn_path, dev_ans_path):
+    def get_dev_loss(self, session, dev_context_path, dev_qn_path, dev_ans_path, dev_feature_path):
         """
         Get loss for entire dev set.
 
@@ -421,7 +442,7 @@ class QAModel(object):
         # which are longer than our context_len or question_len.
         # We need to do this because if, for example, the true answer is cut
         # off the context, then the loss function is undefined.
-        for batch in get_batch_generator(self.word2id, dev_context_path, dev_qn_path, dev_ans_path, self.FLAGS.batch_size, context_len=self.FLAGS.context_len, question_len=self.FLAGS.question_len, discard_long=True):
+        for batch in get_batch_generator(self.word2id, dev_context_path, dev_qn_path, dev_ans_path, dev_feature_path, self.FLAGS.batch_size, context_len=self.FLAGS.context_len, question_len=self.FLAGS.question_len, discard_long=True):
 
             # Get loss for this batch
             loss = self.get_loss(session, batch)
@@ -440,7 +461,7 @@ class QAModel(object):
         return dev_loss
 
 
-    def check_f1_em(self, session, context_path, qn_path, ans_path, dataset, num_samples=100, print_to_screen=False):
+    def check_f1_em(self, session, context_path, qn_path, ans_path, feature_path, dataset, num_samples=100, print_to_screen=False):
         """
         Sample from the provided (train/dev) set.
         For each sample, calculate F1 and EM score.
@@ -476,7 +497,7 @@ class QAModel(object):
 
         # Note here we select discard_long=False because we want to sample from the entire dataset
         # That means we're truncating, rather than discarding, examples with too-long context or questions
-        for batch in get_batch_generator(self.word2id, context_path, qn_path, ans_path, self.FLAGS.batch_size, context_len=self.FLAGS.context_len, question_len=self.FLAGS.question_len, discard_long=False):
+        for batch in get_batch_generator(self.word2id, context_path, qn_path, ans_path, feature_path, self.FLAGS.batch_size, context_len=self.FLAGS.context_len, question_len=self.FLAGS.question_len, discard_long=False):
 
             pred_start_pos, pred_end_pos = self.get_start_end_pos(session, batch)
 
@@ -521,7 +542,7 @@ class QAModel(object):
         return f1_total, em_total
 
 
-    def train(self, session, train_context_path, train_qn_path, train_ans_path, dev_qn_path, dev_context_path, dev_ans_path):
+    def train(self, session, train_context_path, train_qn_path, train_ans_path, train_feature_path, dev_qn_path, dev_context_path, dev_ans_path, dev_feature_path):
         """
         Main training loop.
 
@@ -559,7 +580,7 @@ class QAModel(object):
             epoch_tic = time.time()
 
             # Loop over batches
-            for batch in get_batch_generator(self.word2id, train_context_path, train_qn_path, train_ans_path, self.FLAGS.batch_size, context_len=self.FLAGS.context_len, question_len=self.FLAGS.question_len, discard_long=True):
+            for batch in get_batch_generator(self.word2id, train_context_path, train_qn_path, train_ans_path, train_feature_path, self.FLAGS.batch_size, context_len=self.FLAGS.context_len, question_len=self.FLAGS.question_len, discard_long=True):
 
                 # Run training iteration
                 iter_tic = time.time()
@@ -588,20 +609,20 @@ class QAModel(object):
                 if global_step % self.FLAGS.eval_every == 0:
 
                     # Get loss for entire dev set and log to tensorboard
-                    dev_loss = self.get_dev_loss(session, dev_context_path, dev_qn_path, dev_ans_path)
+                    dev_loss = self.get_dev_loss(session, dev_context_path, dev_qn_path, dev_ans_path, dev_feature_path)
                     logging.info("Epoch %d, Iter %d, dev loss: %f" % (epoch, global_step, dev_loss))
                     write_summary(dev_loss, "dev/loss", summary_writer, global_step)
 
 
                     # Get F1/EM on train set and log to tensorboard
-                    train_f1, train_em = self.check_f1_em(session, train_context_path, train_qn_path, train_ans_path, "train", num_samples=1000)
+                    train_f1, train_em = self.check_f1_em(session, train_context_path, train_qn_path, train_ans_path, train_feature_path, "train", num_samples=1000)
                     logging.info("Epoch %d, Iter %d, Train F1 score: %f, Train EM score: %f" % (epoch, global_step, train_f1, train_em))
                     write_summary(train_f1, "train/F1", summary_writer, global_step)
                     write_summary(train_em, "train/EM", summary_writer, global_step)
 
 
                     # Get F1/EM on dev set and log to tensorboard
-                    dev_f1, dev_em = self.check_f1_em(session, dev_context_path, dev_qn_path, dev_ans_path, "dev", num_samples=0)
+                    dev_f1, dev_em = self.check_f1_em(session, dev_context_path, dev_qn_path, dev_ans_path, dev_feature_path, "dev", num_samples=0)
                     logging.info("Epoch %d, Iter %d, Dev F1 score: %f, Dev EM score: %f" % (epoch, global_step, dev_f1, dev_em))
                     write_summary(dev_f1, "dev/F1", summary_writer, global_step)
                     write_summary(dev_em, "dev/EM", summary_writer, global_step)
